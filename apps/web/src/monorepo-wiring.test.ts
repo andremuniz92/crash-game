@@ -1,0 +1,8 @@
+import { GROWTH_RATE_PER_MS } from '@crash/shared';
+import { describe, expect, it } from 'vitest';
+
+describe('monorepo wiring', () => {
+  it('importa o pacote @crash/shared', () => {
+    expect(GROWTH_RATE_PER_MS).toBe(0.00006);
+  });
+});
