@@ -377,7 +377,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [x] Docker Compose com Postgres
 - [x] GitHub Actions: lint, typecheck e testes em cada push e pull request
 - [x] Vitest configurado nos pacotes, com versões centralizadas no catalog do pnpm
-- [ ] Testes rodando no CI
+- [x] Testes rodando no CI
 - [x] `WsAdapter` do `@nestjs/platform-ws` registrado no bootstrap da api
 - [x] README inicial com como rodar
 
