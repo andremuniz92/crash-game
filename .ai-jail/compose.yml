@@ -9,18 +9,22 @@ services:
     working_dir: /workspace
     environment:
       CLAUDE_CONFIG_DIR: /home/node/.claude
-      npm_config_store_dir: /home/node/.pnpm-store
       TZ: America/Recife
     volumes:
       - ..:/workspace
       - claude-config:/home/node/.claude
-      - pnpm-store:/home/node/.pnpm-store
     ports:
       - "3000:3000"   # API
       - "5173:5173"   # Vite
+    networks:
+      - default
+      - crash-game    # alcança o Postgres do docker-compose.yml da raiz como postgres:5432
     stdin_open: true
     tty: true
 
+networks:
+  crash-game:
+    external: true
+
 volumes:
   claude-config:
-  pnpm-store:
