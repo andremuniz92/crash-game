@@ -69,6 +69,15 @@ Cada pacote tem os mesmos scripts, restritos a ele (`pnpm --filter @crash/web li
 O CI (`.github/workflows/ci.yml`) roda, em cada push e pull request: install com
 `--frozen-lockfile`, build do `shared`, format, lint, typecheck e testes.
 
+## Limitações conhecidas
+
+- **Provably fair sem client seed.** Cada rodada usa uma seed gerada pelo servidor, e o hash dela é
+  publicado antes das apostas. Isso garante que a seed não muda depois de publicada, mas não impede
+  o servidor de gerar várias seeds e escolher uma antes de publicar o hash. Sistemas como o Bustabit
+  resolvem isso com uma cadeia de hashes e uma seed pública que o servidor não controla. Fica
+  registrado como evolução futura (seção 14 do CLAUDE.md).
+- **Uma instância só da API** roda o game loop (D13).
+
 ## Versões
 
 | Ferramenta | Versão |

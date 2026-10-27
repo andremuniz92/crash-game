@@ -77,6 +77,12 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D18 | **AI Jail** em `.ai-jail/` (Docker Compose), sem segredos do host e com o mesmo UID do usuário. O store do pnpm fica dentro do projeto (`.pnpm-store/`, ignorado pelo git) e o jail entra na rede externa `crash-game` | Isolar a execução do agente; instalações e testes rodam no container. O store no mesmo filesystem do projeto permite hardlinks; a rede externa dá acesso ao Postgres sem expor a porta fora do loopback |
 | D19 | **PostgreSQL 18** (`postgres:18-alpine`) no `docker-compose.yml` da raiz, na rede externa `crash-game` criada à mão (`docker network create crash-game`) | Major estável mais recente. A rede externa compartilhada deixa infra e jail subirem de forma independente, em qualquer ordem; o jail acessa `postgres:5432` e o host acessa `127.0.0.1:${POSTGRES_PORT}` (padrão 5433, para não conflitar com outro Postgres local) |
 | D20 | **oxlint** como linter único (type-aware, via `oxlint-tsgolint`), no lugar do ESLint, com uma config na raiz (`.oxlintrc.json`) e o plugin React só em `apps/web`. `any` proibido (`no-explicit-any` como erro), liberado caso a caso com comentário de `oxlint-disable` justificado. **Prettier** na raiz, com aspas simples. O CI falha com qualquer warning (`--deny-warnings`) ou arquivo fora do formato | O oxlint já vem no template do NestJS 12, é muito mais rápido que o ESLint e cobre as regras com tipo que importam aqui (ex.: `no-floating-promises`, regras de hooks). Uma config só evita divergência entre pacotes |
+| D21 | **Multiplicador como inteiro ×100 em todo lugar**, inclusive no `shared`: `multiplierAt(elapsedMs)` devolve o inteiro ×100 (tempo negativo vale 100), e `timeToCrash(crashPointX100)` devolve ms inteiros, arredondados para cima | Uma unidade só no contrato, no VO, no banco e nas fórmulas. Evita erro de ponto flutuante na volta para inteiro (`1.15 * 100 = 114.99999999999999`). Com ms inteiros, `crashAt` é exato e vale `multiplierAt(timeToCrash(c)) ≥ c > multiplierAt(timeToCrash(c) − 1)` |
+| D22 | **Hash determinístico no domínio, aleatoriedade fora.** `rounds/domain` importa HMAC-SHA256 e SHA-256 de `node:crypto`; a geração da seed e dos ids fica atrás de portas na aplicação, e o domínio recebe `id` e `ServerSeed` prontos | Hash é função pura da biblioteca padrão, sem I/O, testável com valores fixos; uma porta não traria ganho. Aleatoriedade, como o tempo (`Clock`), tornaria o domínio não determinístico |
+| D23 | **Codificação do provably fair:** a chave do HMAC e a entrada do SHA-256 são a `serverSeed` como **string hex (64 caracteres) em UTF-8**; a mensagem do HMAC é o `roundId` como UUID em minúsculas, com hífens | Sem ambiguidade para quem verifica de fora; dá para conferir com qualquer ferramenta comum de SHA-256 e HMAC |
+| D24 | **Teto do crash point em 1.000.000,00x** (×100 = 100.000.000), aplicado como `min` na fórmula publicada (seção 7.2) | Sem teto, o valor ×100 chega a ~4,5 × 10¹⁷: passa de `Number.MAX_SAFE_INTEGER`, da coluna `integer` do Postgres e do produto seguro em `Money.multiply`. Com o teto, tudo cabe em inteiros seguros; chegar a 1.000.000x leva ~230 s |
+| D25 | **Shared kernel** em `apps/api/src/shared/domain/` com `Money`, `Multiplier` e a interface `Clock` | São usados por mais de um contexto (`rounds`, `bets`, `wallet`); deixá-los dentro de um contexto obrigaria os outros a importar o domínio alheio |
+| D26 | `BetsSettled` é **evento de domínio**; `RoundSettled` (seção 14) será o **evento de integração** publicado no SNS. Os nomes não são unificados | Evento de domínio é interno e pode mudar com o modelo; evento de integração é contrato público entre sistemas e tem o próprio formato |
 
 ### Decisões pendentes
 
@@ -92,7 +98,7 @@ crash-game/
 │   ├── api/
 │   │   └── src/
 │   │       ├── rounds/
-│   │       │   ├── domain/          # Round, CrashPoint, ServerSeed, eventos, interface do repositório
+│   │       │   ├── domain/          # Round, CrashPoint, ServerSeed, SeedHash, eventos, interface do repositório
 │   │       │   ├── application/     # casos de uso: StartRound, CrashRound, GetCurrentRound, VerifyRound
 │   │       │   └── infrastructure/  # entidades MikroORM, repositório, GameLoopService, gateway WS, controller
 │   │       ├── bets/
@@ -100,11 +106,13 @@ crash-game/
 │   │       │   ├── application/     # PlaceBet, CashOut, SettleRound
 │   │       │   └── infrastructure/
 │   │       ├── wallet/
-│   │       │   ├── domain/          # Wallet, Money, LedgerEntry
+│   │       │   ├── domain/          # Wallet, LedgerEntry
 │   │       │   ├── application/
 │   │       │   └── infrastructure/
 │   │       ├── players/             # guest + autenticação por token (sem DDD, é infraestrutura)
-│   │       └── shared/              # idempotência, filtros de erro, relógio (Clock)
+│   │       └── shared/
+│   │           ├── domain/          # shared kernel (D25): Money, Multiplier, interface Clock
+│   │           └── infrastructure/  # idempotência, filtros de erro, relógio do sistema
 │   └── web/
 │       └── src/
 │           ├── net/                 # cliente WS (reconexão, ressincronização), cliente REST
@@ -140,9 +148,9 @@ Toda regra que depende de tempo recebe um `Clock` (`now(): number` em ms). Nos t
 | VO | Regras |
 |---|---|
 | `Money` | Inteiro em centavos, ≥ 0. Operações `add`, `subtract` (lança erro se ficar negativo) e `multiply(multiplier)` com arredondamento **para baixo** |
-| `Multiplier` | ≥ 1.00, com duas casas decimais. Guardado internamente como inteiro ×100 (ex.: 1.57 → 157) |
-| `ServerSeed` | 32 bytes aleatórios (hex). Nunca exposto antes do crash |
-| `SeedHash` | `sha256(serverSeed)` em hex. Publicado no início da rodada |
+| `Multiplier` | Entre 1.00 e 1.000.000,00 (teto da D24), com duas casas decimais. Guardado internamente como inteiro ×100 (ex.: 1.57 → 157) |
+| `ServerSeed` | 32 bytes aleatórios, representados como string hex de 64 caracteres. Nunca exposto antes do crash. O domínio só a reconstrói (`fromHex`); a geração aleatória fica na aplicação (D22) |
+| `SeedHash` | `sha256(serverSeed)` em hex, calculado sobre a string hex em UTF-8 (D23). Publicado no início da rodada |
 
 ### 6.2 Agregado `Round`
 
@@ -167,7 +175,7 @@ BETTING ──start()──▶ RUNNING ──crash()──▶ CRASHED
 Invariantes:
 - Só sai de `BETTING` para `RUNNING`, e de `RUNNING` para `CRASHED`. Qualquer outra transição lança `InvalidRoundTransitionError`.
 - `serverSeed` só é exposto quando `status === CRASHED`.
-- `multiplierAt(now)` só é definido em `RUNNING` e nunca passa de `crashPoint`.
+- `multiplierAt(now)` só é definido em `RUNNING` e nunca passa de `crashPoint`: vale `min(multiplierAt(now − startedAt), crashPoint)`. O `min` é necessário porque, acima de ~100x, o multiplicador sobe vários centésimos por milissegundo.
 
 ### 6.3 Agregado `Bet`
 
@@ -200,36 +208,48 @@ Invariantes:
 
 Na infraestrutura, o gateway WS escuta esses eventos e faz o broadcast correspondente (seção 8.2).
 
+Estes são eventos de **domínio**, internos à API. O `RoundSettled` da seção 14 é um evento de **integração**, publicado para outros sistemas, e não substitui o `BetsSettled` (D26).
+
 ---
 
 ## 7. Fórmulas (em `packages/shared`, exceto a geração do crash point)
 
 ### 7.1 Multiplicador em função do tempo
 
+Multiplicadores são inteiros ×100 (D21).
+
 ```
-r = 0.00006                     // taxa de crescimento por ms
-multiplierAt(elapsedMs) = floor(100 × e^(r × elapsedMs)) / 100
-timeToCrash(crashPoint) = ln(crashPoint) / r       // em ms
+r = 0.00006                                               // taxa de crescimento por ms
+multiplierAt(elapsedMs)       = floor(100 × e^(r × max(elapsedMs, 0)))     // ×100
+timeToCrash(crashPointX100)   = ceil(ln(crashPointX100 / 100) / r)          // ms inteiros
 ```
 
-Referências: 2,00x em ~11,6 s; 10,00x em ~38 s; 100,00x em ~77 s.
+Referências: 2,00x em ~11,6 s; 10,00x em ~38 s; 100,00x em ~77 s; 1.000.000,00x (teto) em ~230 s.
 
 ### 7.2 Crash point (provably fair, inspirado no modelo do Bustabit)
 
 Fica **só no back-end** (`rounds/domain`).
 
+Codificação (D23): `serverSeed` é a string hex de 64 caracteres, usada em UTF-8; `roundId` é o UUID em minúsculas, com hífens. O resultado é o crash point ×100 (D21).
+
 ```
-hmac = HMAC_SHA256(key = serverSeed, message = roundId)
-h    = inteiro dos primeiros 13 caracteres hex de hmac   // 52 bits
-e    = 2^52
+seedHash = SHA256(serverSeed)                            // hex
+hmac     = HMAC_SHA256(key = serverSeed, message = roundId)
+h        = inteiro dos primeiros 13 caracteres hex de hmac   // 52 bits
+e        = 2^52
 
-se h % 33 === 0:   crashPoint = 1.00          // crash instantâneo, ~3% de vantagem da casa
-senão:             crashPoint = floor((100 × e − h) / (e − h)) / 100
+se h % 33 === 0:   crashPointX100 = 100                  // crash instantâneo (~3% das rodadas)
+senão:             crashPointX100 = floor((100 × e − h) / (e − h))
+crashPointX100 = min(crashPointX100, 100_000_000)        // teto de 1.000.000,00x (D24)
 ```
 
-Verificação pública (`GET /rounds/:id/verify`): devolve `serverSeed`, `seedHash` e `crashPoint`. O cliente confere que `sha256(serverSeed) === seedHash` e recalcula o crash point.
+Números de referência (simulação de 200 mil rodadas): ~3% de crash instantâneo pelo `h % 33`; ~4% do total termina em 1,00x, porque a própria fórmula dá 1,00x quando `h / e < 0,01`; mediana ~1,92x; retorno esperado ~0,96 para qualquer alvo de cash out, ou seja, **~4% de vantagem da casa**.
 
-Testes obrigatórios: valores conhecidos fixos (seed + id → crash point esperado), distribuição aproximada em 100 mil amostras (cerca de 3% de crash em 1,00x, mediana perto de 1,9x) e resultado sempre ≥ 1,00.
+Verificação pública (`GET /rounds/:id/verify`): devolve `serverSeed`, `seedHash` e `crashPoint`. Quem verifica (qualquer pessoa, por fora do app) confere que `sha256(serverSeed) === seedHash` e recalcula o crash point. A verificação dentro do app web exigiria portar a fórmula para o `shared` com Web Crypto e fica fora do escopo.
+
+Testes obrigatórios: valores conhecidos fixos (seed + id → crash point esperado), distribuição aproximada em 100 mil amostras (~3% de crash instantâneo, ~4% do total em 1,00x, mediana perto de 1,9x), resultado sempre entre 100 e 100.000.000, e o teto aplicado.
+
+Limitação conhecida: com uma seed por rodada e sem client seed nem cadeia de hashes, o servidor poderia escolher a seed antes de publicar o hash (seção 14).
 
 ---
 
@@ -441,9 +461,10 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 
 ## 14. Fora do escopo (por enquanto)
 
-- **SNS/SQS:** publicar `RoundSettled` no SNS (via LocalStack) e consumir em uma fila SQS que alimenta histórico e estatísticas. Estimativa: +5 h.
+- **SNS/SQS:** publicar `RoundSettled` no SNS (via LocalStack) e consumir em uma fila SQS que alimenta histórico e estatísticas. Estimativa: +5 h. `RoundSettled` é um evento de integração, distinto do evento de domínio `BetsSettled` (D26).
 - Auto cash out (sacar automaticamente num multiplicador escolhido)
 - Login real com JWT, recuperação de conta
 - Escala horizontal do game loop (exigiria eleição de líder ou lock distribuído)
 - Chat entre jogadores
 - Dinheiro real de qualquer tipo
+- **Provably fair resistente a escolha de seed:** hoje cada rodada tem a própria seed, gerada pelo servidor antes de publicar o hash. Sem client seed nem cadeia de hashes (como no Bustabit), o servidor poderia gerar várias seeds e escolher a que dá o crash point que quiser antes de publicar o `seedHash`. O hash só garante que a seed não muda depois de publicada. Limitação documentada também no README.
