@@ -1,0 +1,7 @@
+# Além do .gitignore (que o Prettier 3 já respeita)
+pnpm-lock.yaml
+.pnpm-store/
+# Editados à mão: o Prettier alinharia as tabelas e tornaria cada mudança um diff enorme
+CLAUDE.md
+# Infra do agente; mantida pelo André fora do fluxo de formatação
+.ai-jail/

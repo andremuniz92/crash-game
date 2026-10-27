@@ -2,12 +2,21 @@
   "name": "crash-game",
   "private": true,
   "scripts": {
-    "test": "pnpm -r test",
+    "dev": "pnpm --filter @crash/shared build && pnpm -r --parallel dev",
+    "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
-    "build": "pnpm -r build"
+    "test": "pnpm -r test",
+    "lint": "oxlint --type-aware --deny-warnings",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "engines": {
     "node": ">=22"
-  }
+  },
+  "devDependencies": {
+    "oxlint": "^1.89.0",
+    "oxlint-tsgolint": "^7.0.2005",
+    "prettier": "^3.9.10"
+  },
+  "packageManager": "pnpm@11.24.0"
 }
