@@ -73,8 +73,10 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D14 | SNS/SQS **fica para depois** (seção 14) | Priorizar o núcleo |
 | D15 | WebSocket com **`ws` nativo**, sem socket.io | WebSocket puro no protocolo padrão; reconexão, backoff e heartbeat (ping/pong) feitos à mão, documentados no README |
 | D16 | **Vitest** em todo o monorepo | Um runner só para api, web e shared; mais rápido. O template ESM do NestJS 12 já vem com Vitest, e o Vite 8 gera os metadados de decorators sem precisar de SWC |
-| D17 | Versões compartilhadas no **catalog do pnpm** | Uma única fonte para typescript e vitest; evita versões diferentes entre pacotes |
-| D18 | **AI Jail** em `.ai-jail/` (Docker Compose), sem segredos do host e com o mesmo UID do usuário | Isolar a execução do agente; instalações e testes rodam no container |
+| D17 | Versões compartilhadas no **catalog do pnpm** | Uma única fonte para typescript, vitest e vite; evita versões diferentes entre pacotes |
+| D18 | **AI Jail** em `.ai-jail/` (Docker Compose), sem segredos do host e com o mesmo UID do usuário. O store do pnpm fica dentro do projeto (`.pnpm-store/`, ignorado pelo git) e o jail entra na rede externa `crash-game` | Isolar a execução do agente; instalações e testes rodam no container. O store no mesmo filesystem do projeto permite hardlinks; a rede externa dá acesso ao Postgres sem expor a porta fora do loopback |
+| D19 | **PostgreSQL 18** (`postgres:18-alpine`) no `docker-compose.yml` da raiz, na rede externa `crash-game` criada à mão (`docker network create crash-game`) | Major estável mais recente. A rede externa compartilhada deixa infra e jail subirem de forma independente, em qualquer ordem; o jail acessa `postgres:5432` e o host acessa `127.0.0.1:${POSTGRES_PORT}` (padrão 5433, para não conflitar com outro Postgres local) |
+| D20 | **oxlint** como linter único (type-aware, via `oxlint-tsgolint`), no lugar do ESLint, com uma config na raiz (`.oxlintrc.json`) e o plugin React só em `apps/web`. `any` proibido (`no-explicit-any` como erro), liberado caso a caso com comentário de `oxlint-disable` justificado. **Prettier** na raiz, com aspas simples. O CI falha com qualquer warning (`--deny-warnings`) ou arquivo fora do formato | O oxlint já vem no template do NestJS 12, é muito mais rápido que o ESLint e cobre as regras com tipo que importam aqui (ex.: `no-floating-promises`, regras de hooks). Uma config só evita divergência entre pacotes |
 
 ### Decisões pendentes
 
@@ -371,13 +373,13 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 
 ### M0 — Setup (3 h)
 - [x] Monorepo pnpm com `apps/api`, `apps/web` e `packages/shared`
-- [ ] TypeScript strict, ESLint e Prettier compartilhados
-- [ ] Docker Compose com Postgres
-- [ ] GitHub Actions: lint, typecheck e testes em cada push
+- [x] TypeScript strict, oxlint e Prettier compartilhados
+- [x] Docker Compose com Postgres
+- [x] GitHub Actions: lint, typecheck e testes em cada push e pull request
 - [x] Vitest configurado nos pacotes, com versões centralizadas no catalog do pnpm
-- [ ] Testes rodando no CIgit
-- [ ] `WsAdapter` do `@nestjs/platform-ws` registrado no bootstrap da api
-- [ ] README inicial com como rodar
+- [ ] Testes rodando no CI
+- [x] `WsAdapter` do `@nestjs/platform-ws` registrado no bootstrap da api
+- [x] README inicial com como rodar
 
 ### M1 — Domínio com DDD, implementado com TDD (5 h)
 - [ ] VOs: `Money`, `Multiplier`, `ServerSeed`, `SeedHash`
