@@ -21,6 +21,7 @@ O README e a qualidade do histórico de commits pesam tanto quanto o código.
 ## 2. Regras de colaboração (método Akita)
 
 - **Decisões de arquitetura são do André.** O agente executa, propõe e questiona, mas não decide sozinho. Qualquer mudança de arquitetura, contrato ou modelo de dados é proposta antes e registrada na seção 4.
+- **O agente não faz commit nem push.** Ele prepara as mudanças; o André revisa o diff e commita no host.
 - **TDD sempre no domínio:** teste que falha → código mínimo → refatoração.
 - **Commits pequenos**, um assunto por commit, com mensagem no padrão Conventional Commits (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`, `chore:`).
 - **Nada de dependência nova sem justificar.** Antes de instalar um pacote, diga para que serve e qual a alternativa.
@@ -73,6 +74,7 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D15 | WebSocket com **`ws` nativo**, sem socket.io | WebSocket puro no protocolo padrão; reconexão, backoff e heartbeat (ping/pong) feitos à mão, documentados no README |
 | D16 | **Vitest** em todo o monorepo | Um runner só para api, web e shared; mais rápido. O template ESM do NestJS 12 já vem com Vitest, e o Vite 8 gera os metadados de decorators sem precisar de SWC |
 | D17 | Versões compartilhadas no **catalog do pnpm** | Uma única fonte para typescript e vitest; evita versões diferentes entre pacotes |
+| D18 | **AI Jail** em `.ai-jail/` (Docker Compose), sem segredos do host e com o mesmo UID do usuário | Isolar a execução do agente; instalações e testes rodam no container |
 
 ### Decisões pendentes
 
@@ -373,7 +375,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [ ] Docker Compose com Postgres
 - [ ] GitHub Actions: lint, typecheck e testes em cada push
 - [x] Vitest configurado nos pacotes, com versões centralizadas no catalog do pnpm
-- [ ] Testes rodando no CI
+- [ ] Testes rodando no CIgit
 - [ ] `WsAdapter` do `@nestjs/platform-ws` registrado no bootstrap da api
 - [ ] README inicial com como rodar
 

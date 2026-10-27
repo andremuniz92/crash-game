@@ -1,0 +1,26 @@
+services:
+  claude:
+    build:
+      context: .
+      args:
+        USER_UID: ${UID:-1000}
+        USER_GID: ${GID:-100}
+    container_name: crash-game-claude
+    working_dir: /workspace
+    environment:
+      CLAUDE_CONFIG_DIR: /home/node/.claude
+      npm_config_store_dir: /home/node/.pnpm-store
+      TZ: America/Recife
+    volumes:
+      - ..:/workspace
+      - claude-config:/home/node/.claude
+      - pnpm-store:/home/node/.pnpm-store
+    ports:
+      - "3000:3000"   # API
+      - "5173:5173"   # Vite
+    stdin_open: true
+    tty: true
+
+volumes:
+  claude-config:
+  pnpm-store:
