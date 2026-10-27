@@ -1,0 +1,13 @@
+{
+  "name": "crash-game",
+  "private": true,
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "build": "pnpm -r build"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
