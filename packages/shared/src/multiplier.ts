@@ -1,7 +1,4 @@
-import { GROWTH_RATE_PER_MS } from './constants.js';
-
-/** 1,00x na escala ×100 usada em todo o projeto (D21). */
-const ONE_X = 100;
+import { GROWTH_RATE_PER_MS, ONE_X } from './constants.js';
 
 /**
  * Multiplicador ×100 (inteiro) após `elapsedMs` de rodada, arredondado para baixo.
