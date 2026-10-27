@@ -43,7 +43,7 @@ O README e a qualidade do histórico de commits pesam tanto quanto o código.
 | Front | Vite + React + TypeScript |
 | Renderização | PixiJS v8 (uso imperativo) |
 | Estado no front | Zustand |
-| Testes | Vitest em todo o monorepo (SWC no `apps/api` para os decorators do Nest); Testcontainers para integração com Postgres |
+| Testes | Vitest em todo o monorepo (decorators resolvidos pelo Vite 8, sem SWC); Testcontainers para integração com Postgres |
 | Infra local | Docker Compose (postgres + api) |
 | CI | GitHub Actions: lint, typecheck, testes |
 | Deploy | web no Netlify, api + Postgres no Railway ou Render |
@@ -71,7 +71,8 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D13 | **Uma instância** da API roda o game loop | Escala horizontal fica fora do escopo e é documentada como limitação |
 | D14 | SNS/SQS **fica para depois** (seção 14) | Priorizar o núcleo |
 | D15 | WebSocket com **`ws` nativo**, sem socket.io | WebSocket puro no protocolo padrão; reconexão, backoff e heartbeat (ping/pong) feitos à mão, documentados no README |
-| D16 | **Vitest** em todo o monorepo | Um runner só para api, web e shared; mais rápido. No `apps/api`, usar SWC (`unplugin-swc`) para suportar os decorators e metadados do Nest |
+| D16 | **Vitest** em todo o monorepo | Um runner só para api, web e shared; mais rápido. O template ESM do NestJS 12 já vem com Vitest, e o Vite 8 gera os metadados de decorators sem precisar de SWC |
+| D17 | Versões compartilhadas no **catalog do pnpm** | Uma única fonte para typescript e vitest; evita versões diferentes entre pacotes |
 
 ### Decisões pendentes
 
@@ -367,11 +368,12 @@ Testes de concorrência obrigatórios:
 Estimativa total: ~39 h (MVP sem M6: ~30 h).
 
 ### M0 — Setup (3 h)
-- [ ] Monorepo pnpm com `apps/api`, `apps/web` e `packages/shared`
+- [x] Monorepo pnpm com `apps/api`, `apps/web` e `packages/shared`
 - [ ] TypeScript strict, ESLint e Prettier compartilhados
 - [ ] Docker Compose com Postgres
 - [ ] GitHub Actions: lint, typecheck e testes em cada push
-- [ ] Vitest configurado nos três pacotes (com SWC no `apps/api`) e um teste de exemplo rodando no CI
+- [x] Vitest configurado nos pacotes, com versões centralizadas no catalog do pnpm
+- [ ] Testes rodando no CI
 - [ ] `WsAdapter` do `@nestjs/platform-ws` registrado no bootstrap da api
 - [ ] README inicial com como rodar
 
