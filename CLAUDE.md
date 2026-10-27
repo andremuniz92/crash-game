@@ -83,6 +83,8 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D24 | **Teto do crash point em 1.000.000,00x** (×100 = 100.000.000), aplicado como `min` na fórmula publicada (seção 7.2) | Sem teto, o valor ×100 chega a ~4,5 × 10¹⁷: passa de `Number.MAX_SAFE_INTEGER`, da coluna `integer` do Postgres e do produto seguro em `Money.multiply`. Com o teto, tudo cabe em inteiros seguros; chegar a 1.000.000x leva ~230 s |
 | D25 | **Shared kernel** em `apps/api/src/shared/domain/` com `Money`, `Multiplier` e a interface `Clock` | São usados por mais de um contexto (`rounds`, `bets`, `wallet`); deixá-los dentro de um contexto obrigaria os outros a importar o domínio alheio |
 | D26 | `BetsSettled` é **evento de domínio**; `RoundSettled` (seção 14) será o **evento de integração** publicado no SNS. Os nomes não são unificados | Evento de domínio é interno e pode mudar com o modelo; evento de integração é contrato público entre sistemas e tem o próprio formato |
+| D27 | Fórmula do crash point com **divisão inteira exata** (`BigInt`), não em ponto flutuante | `100 × 2^52` passa de `2^53`: em `number` a conta perde bits e diverge da divisão exata em alguns casos (observado acima do teto). A divisão exata deixa a fórmula publicada sem ambiguidade para quem verifica |
+| D28 | **Erros de domínio** herdam de `DomainError`, que carrega um `code` legível (ex.: `INVALID_MONEY`); uma subclasse por regra violada. A camada HTTP (M3) converte o `code` em status | O domínio não conhece HTTP, mas cada erro é identificável sem comparar mensagens |
 
 ### Decisões pendentes
 
@@ -230,7 +232,7 @@ Referências: 2,00x em ~11,6 s; 10,00x em ~38 s; 100,00x em ~77 s; 1.000.000,00x
 
 Fica **só no back-end** (`rounds/domain`).
 
-Codificação (D23): `serverSeed` é a string hex de 64 caracteres, usada em UTF-8; `roundId` é o UUID em minúsculas, com hífens. O resultado é o crash point ×100 (D21).
+Codificação (D23): `serverSeed` é a string hex de 64 caracteres, usada em UTF-8; `roundId` é o UUID em minúsculas, com hífens. O resultado é o crash point ×100 (D21). Toda a aritmética de `h` é inteira e exata (`BigInt`, D27); `div` é a divisão inteira, que arredonda para baixo.
 
 ```
 seedHash = SHA256(serverSeed)                            // hex
@@ -239,7 +241,7 @@ h        = inteiro dos primeiros 13 caracteres hex de hmac   // 52 bits
 e        = 2^52
 
 se h % 33 === 0:   crashPointX100 = 100                  // crash instantâneo (~3% das rodadas)
-senão:             crashPointX100 = floor((100 × e − h) / (e − h))
+senão:             crashPointX100 = (100 × e − h) div (e − h)   // divisão inteira exata (D27)
 crashPointX100 = min(crashPointX100, 100_000_000)        // teto de 1.000.000,00x (D24)
 ```
 
