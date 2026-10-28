@@ -19,6 +19,8 @@ import { CLOCK, ID_GENERATOR } from '../../src/shared/infrastructure/tokens.js';
 
 export const BETTING_MS = 10_000;
 export const PAUSE_MS = 3_000;
+/** Origem do front nos testes: a única aceita pelo CORS e pelo WS (D69, D70). */
+export const WEB_ORIGIN = 'http://localhost:5173';
 
 /**
  * Ids e seeds com fila: devolvem o que o teste enfileirou e, depois,
@@ -64,6 +66,7 @@ export async function createTestApp(
     tickMs: overrides.tickMs ?? 100,
     pauseMs: PAUSE_MS,
     wsHeartbeatMs: 30_000,
+    webOrigin: WEB_ORIGIN,
   };
   let builder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(APP_CONFIG)
