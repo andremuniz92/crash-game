@@ -72,6 +72,10 @@ describe('camadas e contextos (D55)', () => {
           `import { Round } from '../../rounds/domain/round.js';`,
         ],
         [
+          'rounds/application/game-loop-step.int-spec.ts',
+          `import { Bet } from '../../bets/domain/bet.js';\nimport { testOrm } from '../../../test/integration/test-orm.js';`,
+        ],
+        [
           'wallet/application/open-wallet.ts',
           `import { Wallet } from '../domain/wallet.js';\nimport type { Clock } from '../../shared/domain/clock.js';\nimport { MIN_BET_CENTS } from '@crash/shared';`,
         ],

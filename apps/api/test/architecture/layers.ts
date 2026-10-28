@@ -36,7 +36,7 @@ export function layerViolations(sources: Map<string, string>): string[] {
     if (!context || !CONTEXTS.has(context) || !PURE_LAYERS.has(layer ?? '')) {
       continue;
     }
-    const isSpec = path.endsWith('.spec.ts');
+    const isSpec = /[.-]spec\.ts$/.test(path);
 
     for (const specifier of importsOf(source)) {
       if (FRAMEWORKS.test(specifier)) {
