@@ -242,6 +242,10 @@ Só do servidor para o cliente, sem autenticação. O handshake só é aceito co
 | `bet:placed`     | Alguém apostou                            |
 | `bet:cashed_out` | Alguém fez cash out                       |
 
+As mensagens de aposta e as apostas do `GET /rounds/current` trazem o `betId`, para o front saber qual
+aposta mudou mesmo com nicknames repetidos, e nunca o `playerId`. O `betId` não dá poder a ninguém:
+o cash out exige o token do dono da aposta.
+
 Antes do crash, nenhuma resposta REST nem mensagem do WebSocket carrega o crash point, o instante
 do crash ou a seed. O `round:tick` serve só para sincronizar: o cliente calcula o multiplicador a
 cada frame com a fórmula do `@crash/shared`. O servidor manda ping a cada `WS_HEARTBEAT_MS` e
