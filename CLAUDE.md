@@ -505,7 +505,7 @@ Estimativa total: ~43–45 h (MVP sem M6: ~34–36 h).
 - [ ] Store com Zustand
 - [ ] UI: painel de aposta, carteira, lista de jogadores, histórico
 - [ ] Regras do nickname (`^[A-Za-z0-9_-]{3,16}$`, aparado) movidas da api para o `@crash/shared`, usadas pelo `parseGuestBody` e pelo formulário do front (como a D36)
-- [ ] CORS na API liberado só para a origem do front, lida da configuração (variável nova no `readAppConfig`), nunca `*`; a conexão do WebSocket aceita só essa mesma origem (D69, D70)
+- [x] CORS na API liberado só para a origem do front, lida da configuração (variável nova no `readAppConfig`), nunca `*`; a conexão do WebSocket aceita só essa mesma origem (D69, D70)
 - [ ] `betId` público em `bet:placed`, `bet:cashed_out` e no `RoundBetDto`, com teste de que o `playerId` não aparece (D71)
 
 ### M5 — Cena PixiJS (6 h)

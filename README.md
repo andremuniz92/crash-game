@@ -153,18 +153,21 @@ com 0. Gerenciadores de processo podem mostrar outro número; o que vale é o lo
 
 ### Configuração da API
 
-| Variável            | Padrão  | O que é                                                 |
-| ------------------- | ------- | ------------------------------------------------------- |
-| `DATABASE_URL`      | —       | Postgres da API (obrigatória)                           |
-| `TEST_DATABASE_URL` | —       | Postgres dos testes; o nome precisa terminar em `_test` |
-| `PORT`              | `3000`  | Porta HTTP e WebSocket                                  |
-| `BETTING_MS`        | `10000` | Janela de apostas de cada rodada                        |
-| `PAUSE_MS`          | `3000`  | Pausa entre o crash e a próxima rodada                  |
-| `TICK_MS`           | `100`   | Intervalo do `round:tick`                               |
-| `WS_HEARTBEAT_MS`   | `30000` | Intervalo do ping do WebSocket                          |
+| Variável            | Padrão  | O que é                                                                  |
+| ------------------- | ------- | ------------------------------------------------------------------------ |
+| `DATABASE_URL`      | —       | Postgres da API (obrigatória)                                            |
+| `TEST_DATABASE_URL` | —       | Postgres dos testes; o nome precisa terminar em `_test`                  |
+| `WEB_ORIGIN`        | —       | Origem do front, a única aceita pelo CORS e pelo WebSocket (obrigatória) |
+| `PORT`              | `3000`  | Porta HTTP e WebSocket                                                   |
+| `BETTING_MS`        | `10000` | Janela de apostas de cada rodada                                         |
+| `PAUSE_MS`          | `3000`  | Pausa entre o crash e a próxima rodada                                   |
+| `TICK_MS`           | `100`   | Intervalo do `round:tick`                                                |
+| `WS_HEARTBEAT_MS`   | `30000` | Intervalo do ping do WebSocket                                           |
 
 Valores inválidos (não inteiros, zero ou negativos) impedem a API de subir, com o nome da variável
-no erro.
+no erro. A `WEB_ORIGIN` precisa ser uma origem pura, como o navegador manda no header `Origin`
+(`http://localhost:5173`, sem barra final nem caminho); se ela vier em outra forma, o erro mostra a
+forma esperada. Abrir o front em `127.0.0.1:5173` é outra origem e será recusado.
 
 ### Scripts da raiz
 
@@ -226,7 +229,8 @@ curl -s -X POST localhost:3000/bets -H "Authorization: Bearer $TOKEN" \
 
 ### WebSocket (`/ws`)
 
-Só do servidor para o cliente, sem autenticação. Toda mensagem tem o formato
+Só do servidor para o cliente, sem autenticação. O handshake só é aceito com o header `Origin` igual à
+`WEB_ORIGIN`; outra origem, ou nenhuma, recebe 403. Toda mensagem tem o formato
 `{ type, payload, serverTime }`:
 
 | `type`           | Quando                                    |
@@ -266,6 +270,9 @@ recalcular o crash point com a fórmula da seção 7.2 do CLAUDE.md.
 - **O `round:tick` não tem teto no crash point** (D68). Se o crash atrasar alguns milissegundos, um
   tick pode mostrar um valor um pouco acima do crash point; o `round:crashed` traz o valor exato.
   Isso não dá vantagem, porque qualquer cash out depois do instante do crash é recusado.
+- **CORS e a origem do WebSocket não são autenticação** (D69, D70). Eles impedem que uma página de
+  outra origem use a API pelo navegador do jogador, mas um cliente fora do navegador manda o
+  `Origin` que quiser.
 
 ## Versões
 
