@@ -80,6 +80,11 @@ o front em `http://localhost:5173`.
 A API roda com `tsc --watch` e `node --watch` sobre o `dist`, então reinicia tanto quando muda o
 código dela quanto quando muda o `shared`. Ela conecta no banco no boot e lê o `.env` da raiz.
 
+Encerramento: com SIGTERM ou SIGINT, a API para o game loop, espera o passo em andamento
+terminar e fecha o banco. Rodando direto (`node dist/main.js`), o processo sai com o código 143
+(128 + 15, o padrão para SIGTERM). No `pnpm dev`, quem recebe o sinal é o `node --watch`, que sai
+com 0. Gerenciadores de processo podem mostrar outro número; o que vale é o log sem erro.
+
 ### Scripts da raiz
 
 | Script              | O que faz                                           |
