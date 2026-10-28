@@ -470,7 +470,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [x] Testes de integração com o Postgres de teste (D39)
 
 ### M3 — API e tempo real (6 h)
-- [ ] Guest e autenticação por token
+- [x] Guest e autenticação por token
 - [ ] Endpoints REST da seção 8.1; id malformado na URL (`verify`, `cashout`) responde 400 `VALIDATION_ERROR`, com teste E2E (D58)
 - [ ] Idempotência: validação do header no HTTP, registro na transação e migration do `request_hash`, com teste do 422 `IDEMPOTENCY_KEY_REUSED` para outro corpo (D60)
 - [ ] `GameLoopService` com recuperação no boot; `msUntilCrash` incluído no teste da D47, permitido só no game loop (D61)
