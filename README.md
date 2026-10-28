@@ -54,18 +54,40 @@ O código foi escrito com IA agêntica (Claude Code), seguindo um processo defin
 
 Requisitos: Node.js 24 (veja `.nvmrc`), pnpm 11 e Docker.
 
+### Onde rodar: no host ou no AI Jail
+
+Os comandos (`pnpm dev`, testes, migrations) rodam em um de dois lugares. O que muda entre eles é
+só o endereço do Postgres em `DATABASE_URL` e `TEST_DATABASE_URL`:
+
+| Onde                                             | Como o banco é acessado  | `DATABASE_URL`                                     | `TEST_DATABASE_URL`                                     |
+| ------------------------------------------------ | ------------------------ | -------------------------------------------------- | ------------------------------------------------------- |
+| **No host** (o caminho de quem clona)            | porta publicada          | `postgres://crash:crash@localhost:5433/crash_game` | `postgres://crash:crash@localhost:5433/crash_game_test` |
+| **No AI Jail** (`.ai-jail/`, onde o agente roda) | rede Docker `crash-game` | `postgres://crash:crash@postgres:5432/crash_game`  | `postgres://crash:crash@postgres:5432/crash_game_test`  |
+
+O `5433` é o `POSTGRES_PORT` do `.env`; se mudar a porta, mude nas duas URLs do host. O
+`.env.example` vem com as URLs do jail e traz as do host comentadas logo abaixo: **no host, troque
+as duas linhas.** Nos dois caminhos, a API e o front ficam em `localhost:3000` e `localhost:5173`
+no navegador do host (o jail publica essas portas).
+
+O `.env` da raiz é lido pelos scripts nos dois lugares, então ele aponta para um caminho de cada
+vez. Para alternar sem editar o arquivo, defina as variáveis no shell: as do ambiente têm
+prioridade sobre o `.env`. Por exemplo, no host:
+
+```sh
+export DATABASE_URL=postgres://crash:crash@localhost:5433/crash_game
+export TEST_DATABASE_URL=postgres://crash:crash@localhost:5433/crash_game_test
+```
+
 ### Setup único
 
-A infra (`docker-compose.yml`) e o AI Jail (`.ai-jail/compose.yml`) compartilham a rede
-Docker `crash-game`, declarada como externa nos dois. Crie-a uma vez:
+O `docker-compose.yml` usa a rede Docker `crash-game`, declarada como externa (o AI Jail usa a
+mesma). Crie-a uma vez, mesmo que vá rodar só no host:
 
 ```sh
 docker network create crash-game
-cp .env.example .env
+cp .env.example .env     # no host, troque as URLs para localhost:5433 (veja acima)
 pnpm install
 ```
-
-Depois disso, os dois composes sobem de forma independente, em qualquer ordem.
 
 ### Banco de dados
 
@@ -73,18 +95,9 @@ Depois disso, os dois composes sobem de forma independente, em qualquer ordem.
 docker compose up -d
 ```
 
-Postgres 18, acessível de dois jeitos:
-
-- **Dentro da rede `crash-game`** (AI Jail, API em container): sempre `postgres:5432`.
-- **Do host** (psql, DBeaver): `localhost:${POSTGRES_PORT}`, por padrão `5433`. Essa porta só
-  importa para acesso externo; mude no `.env` se ela já estiver em uso.
-
-### Variáveis de ambiente
-
-Um `.env` só, na raiz, compartilhado entre o host e o AI Jail. Testes, migrations e a API rodam
-dentro do jail, então `DATABASE_URL` e `TEST_DATABASE_URL` usam o endereço da rede `crash-game`
-(`postgres:5432`). O `localhost:5433` do `.env.example` serve só de referência para acesso
-externo a partir do host (DBeaver, psql).
+Postgres 18, publicado só no loopback do host (`127.0.0.1:5433` por padrão) e acessível como
+`postgres:5432` dentro da rede `crash-game`. Ferramentas como psql e DBeaver usam o endereço do
+host.
 
 ### Migrations
 
