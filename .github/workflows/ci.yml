@@ -42,3 +42,45 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+  integration:
+    runs-on: ubuntu-latest
+    # Postgres de teste (D39): mesma imagem do docker-compose.yml.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: crash
+          POSTGRES_PASSWORD: crash
+          POSTGRES_DB: crash_game
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U crash -d crash_game"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      # Credenciais só deste container efêmero, sem valor fora do CI.
+      DATABASE_URL: postgres://crash:crash@localhost:5432/crash_game
+      TEST_DATABASE_URL: postgres://crash:crash@localhost:5432/crash_game_test
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build do shared
+        run: pnpm --filter @crash/shared build
+
+      - name: Testes de integração
+        run: pnpm --filter @crash/api test:int
+
+      - name: Migrations em dia com os registros
+        run: pnpm --filter @crash/api migration:check
