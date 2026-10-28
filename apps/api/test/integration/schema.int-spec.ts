@@ -105,15 +105,15 @@ async function insertBet(
 }
 
 describe('schema: migration inicial', () => {
-  it('está aplicada, carregada pelo Vitest a partir do arquivo .ts', async () => {
+  it('as migrations estão aplicadas, carregadas pelo Vitest a partir dos arquivos .ts', async () => {
     const rows = await query<{ name: string }>(
-      'select name from mikro_orm_migrations',
+      'select name from mikro_orm_migrations order by id',
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.name).toMatch(/^Migration\d{14}$/);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row.name).toMatch(/^Migration\d{14}$/);
   });
 
-  it('é reversível: down e up de novo voltam ao mesmo schema', async () => {
+  it('M2: é reversível: down até o início e up de novo voltam ao mesmo schema', async () => {
     const orm = await testOrm();
     const exists = async () =>
       (
@@ -122,7 +122,7 @@ describe('schema: migration inicial', () => {
         )
       )[0];
 
-    await orm.migrator.down();
+    await orm.migrator.down({ to: 0 });
     expect(Object.values((await exists()) ?? {})).toEqual(
       TABLES.map(() => null),
     );
@@ -159,6 +159,24 @@ describe('schema: migration inicial', () => {
     }
     expect(types['idempotency_keys.response_body']).toBe('jsonb');
   });
+
+  it('M1: idempotency_keys.request_hash é varchar(64) not null (D60)', async () => {
+    const [column] = await query<{
+      data_type: string;
+      character_maximum_length: number;
+      is_nullable: string;
+    }>(
+      `select data_type, character_maximum_length, is_nullable
+         from information_schema.columns
+        where table_schema = 'public' and table_name = 'idempotency_keys'
+          and column_name = 'request_hash'`,
+    );
+    expect(column).toEqual({
+      data_type: 'character varying',
+      character_maximum_length: 64,
+      is_nullable: 'NO',
+    });
+  });
 });
 
 describe('schema: restrições', () => {
@@ -192,6 +210,7 @@ describe('schema: restrições', () => {
       playerId: PLAYER,
       key: '00000000-0000-4000-8000-0000000000c1',
       endpoint: 'POST /bets',
+      requestHash: 'a'.repeat(64),
       responseStatus: 201,
       responseBody: { ok: true },
       createdAt: NOW,
