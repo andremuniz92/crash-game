@@ -1,6 +1,22 @@
 import { fileURLToPath } from 'node:url';
 import { Migrator } from '@mikro-orm/migrations';
 import { defineConfig, type Options } from '@mikro-orm/postgresql';
+import { BetRecord } from '../../../bets/infrastructure/bet.record.js';
+import { PlayerRecord } from '../../../players/player.record.js';
+import { RoundRecord } from '../../../rounds/infrastructure/round.record.js';
+import { LedgerEntryRecord } from '../../../wallet/infrastructure/ledger-entry.record.js';
+import { WalletRecord } from '../../../wallet/infrastructure/wallet.record.js';
+import { IdempotencyKeyRecord } from '../idempotency/idempotency-key.record.js';
+
+/** Todos os registros de persistência (D41). */
+export const RECORDS = [
+  PlayerRecord,
+  WalletRecord,
+  LedgerEntryRecord,
+  RoundRecord,
+  BetRecord,
+  IdempotencyKeyRecord,
+];
 
 /**
  * Pasta das migrations, relativa a este arquivo: `src/migrations` quando roda
@@ -20,14 +36,15 @@ export function ormOptions(
 ): Options {
   return defineConfig({
     clientUrl,
-    entities: [], // registros entram na Fase 3
-    discovery: { warnWhenNoEntities: false },
+    entities: RECORDS,
     forceUtcTimezone: true,
     ensureDatabase: false,
     extensions: [Migrator],
     migrations: {
       path: MIGRATIONS_PATH,
       tableName: 'mikro_orm_migrations',
+      // Nome fixo, independente do nome do banco de cada ambiente.
+      snapshotName: '.snapshot',
       transactional: true,
       allOrNothing: true,
     },
