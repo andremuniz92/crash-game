@@ -26,6 +26,7 @@ O README e a qualidade do histórico de commits pesam tanto quanto o código.
 - **Commits pequenos**, um assunto por commit, com mensagem no padrão Conventional Commits (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`, `chore:`).
 - **Nada de dependência nova sem justificar.** Antes de instalar um pacote, diga para que serve e qual a alternativa.
 - **O agente roda isolado** (container Docker, "AI Jail"). Não há dado de produção neste projeto, e nenhum segredo vai para o repositório.
+- **Banco de desenvolvimento:** o agente pode rodar `migration:up` nele sem pedir, porque esse banco é descartável. Qualquer outra alteração de dados nele (inclusive subir a API ou o game loop contra ele) precisa da aprovação do André. Os testes usam o banco `crash_game_test` (D39, D40) e não entram nessa regra.
 - **Todo código gerado é revisado** pelo André antes do merge. Se o agente não tiver certeza de algo, ele pergunta em vez de supor.
 - Ao fim de cada etapa: rodar testes, lint e typecheck, e marcar o checklist da seção 13.
 
@@ -472,8 +473,8 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 
 ### M3 — API e tempo real (6 h)
 - [x] Guest e autenticação por token
-- [ ] Endpoints REST da seção 8.1; id malformado na URL (`verify`, `cashout`) responde 400 `VALIDATION_ERROR`, com teste E2E (D58)
-- [ ] Idempotência: validação do header no HTTP, registro na transação e migration do `request_hash`, com teste do 422 `IDEMPOTENCY_KEY_REUSED` para outro corpo (D60)
+- [x] Endpoints REST da seção 8.1; id malformado na URL (`verify`, `cashout`) responde 400 `VALIDATION_ERROR`, com teste E2E (D58)
+- [x] Idempotência: validação do header no HTTP, registro na transação e migration do `request_hash`, com teste do 422 `IDEMPOTENCY_KEY_REUSED` para outro corpo (D60)
 - [x] `GameLoopService` com recuperação no boot; `msUntilCrash` incluído no teste da D47, permitido só no game loop (D61)
 - [ ] Gateway WS com os eventos da seção 8.2
 - [ ] Testes de concorrência e E2E
@@ -484,6 +485,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [ ] Store com Zustand
 - [ ] UI: painel de aposta, carteira, lista de jogadores, histórico
 - [ ] Regras do nickname (`^[A-Za-z0-9_-]{3,16}$`, aparado) movidas da api para o `@crash/shared`, usadas pelo `parseGuestBody` e pelo formulário do front (como a D36)
+- [ ] CORS na API liberado só para a origem do front, lida da configuração (variável nova no `readAppConfig`), nunca `*`; a conexão do WebSocket aceita só essa mesma origem
 
 ### M5 — Cena PixiJS (6 h)
 - [ ] `<GameCanvas />` com ciclo de vida correto
