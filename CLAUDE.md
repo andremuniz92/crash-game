@@ -44,7 +44,7 @@ O README e a qualidade do histórico de commits pesam tanto quanto o código.
 | Front | Vite + React + TypeScript |
 | Renderização | PixiJS v8 (uso imperativo) |
 | Estado no front | Zustand |
-| Testes | Vitest em todo o monorepo (decorators resolvidos pelo Vite 8, sem SWC); Testcontainers para integração com Postgres |
+| Testes | Vitest em todo o monorepo (decorators resolvidos pelo Vite 8, sem SWC); integração com o Postgres do Docker Compose, num banco separado (`crash_game_test`), e com um service container no CI (D39) |
 | Infra local | Docker Compose (postgres + api) |
 | CI | GitHub Actions: lint, typecheck, testes |
 | Deploy | web no Netlify, api + Postgres no Railway ou Render |
@@ -89,12 +89,19 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D30 | **`crashPoint` e `crashAt` são secretos como a `serverSeed`** até o crash: sem getter público no `Round`, fora dos eventos `RoundCreated` e `RoundStarted` e fora do `GET /rounds/current`. As regras usam `acceptsCashOutAt(now)`; os valores só saem por `revealCrashPoint()` depois do crash | Quem sabe `crashAt` sabe o crash point (`crashAt − startedAt = timeToCrash(crashPoint)`) e poderia sacar 1 ms antes |
 | D31 | **Eventos de domínio** são objetos simples, tipados como union discriminada por `type`. Os agregados herdam de `AggregateRoot` (`shared/domain/`), que acumula os eventos; `pullEvents()` devolve e esvazia a lista | Eventos serializáveis e fáceis de comparar em teste; a infraestrutura publica o que o agregado acumulou depois do commit |
 | D32 | O `bets/domain` declara a interface **`RoundView`** (`id`, `status`, `acceptsBetsAt`, `acceptsCashOutAt`, `multiplierAt`), que o `Round` satisfaz por tipagem estrutural | O `bets` não importa o domínio do `rounds` (seção 5); o typecheck dos testes, que usam o `Round` real, garante a compatibilidade |
-| D33 | **Uma aposta por jogador por rodada** e **posse da aposta** ficam fora do agregado: a aplicação consulta o repositório (`findByRoundAndPlayer`, `findByIdAndPlayer`), e o `UNIQUE (round_id, player_id)` é a última barreira. Aposta de outro jogador responde 404 | Um `Bet` não conhece as outras apostas nem quem pergunta; 404 não revela que a aposta existe |
+| D33 | **Uma aposta por jogador por rodada** e **posse da aposta** ficam fora do agregado: a aplicação consulta o repositório (`findByRoundAndPlayer`, `getByIdAndPlayerForUpdate`), e o `UNIQUE (round_id, player_id)` é a última barreira. Aposta de outro jogador responde 404 | Um `Bet` não conhece as outras apostas nem quem pergunta; 404 não revela que a aposta existe |
 | D34 | **Erros do cash out:** rodada em `BETTING` → `ROUND_NOT_RUNNING`; rodada em `RUNNING` com `now ≥ crashAt` → `TOO_LATE`; rodada já em `CRASHED` → `TOO_LATE` | Para o jogador, cash out depois do crash é atraso; a resposta é a mesma dos dois lados da corrida com o game loop |
 | D35 | **`BetsSettled`** é produzido pelo serviço de domínio `settleBets(round, bets)`, que exige a rodada em `CRASHED`, chama `lose()` nas apostas `PENDING` e devolve `BetsSettled { roundId, lostBetIds }` | Um agregado não emite evento sobre várias instâncias |
 | D36 | Limites de aposta (`MIN_BET_CENTS = 100`, `MAX_BET_CENTS = 100_000`) no **`@crash/shared`** | O front valida o formulário com os mesmos valores; uma fonte só, como o `ONE_X` |
 | D37 | **`LedgerEntry`** é objeto de valor sem `id` (`type`, `amount` com sinal, `betId`, `createdAt`); o `id` é identity do banco (M2). A invariante "saldo = soma do extrato" é testada no domínio, numa carteira em memória, e no M2 também no banco | Sem gerar id no domínio (D22); o banco já tem a fonte de verdade do extrato completo |
-| D38 | **Repositórios** são interfaces assíncronas no domínio de cada contexto, sem implementação até o M2. O lock pessimista é explícito no contrato (`WalletRepository.getForUpdate`). Snapshot e reconstrução dos agregados ficam para o M2; o histórico de rodadas é consulta da aplicação (M3) | O contrato diz o que a regra de concorrência (10.1, 10.2) precisa; os detalhes de mapeamento são da persistência |
+| D38 | **Repositórios** são interfaces assíncronas no domínio de cada contexto, sem implementação até o M2. O lock pessimista é explícito no contrato (`WalletRepository.getForUpdate` e `BetRepository.getByIdAndPlayerForUpdate`, D45). Snapshot e reconstrução dos agregados ficam para o M2; o histórico de rodadas é consulta da aplicação (M3) | O contrato diz o que a regra de concorrência (10.1, 10.2) precisa; os detalhes de mapeamento são da persistência |
+| D39 | **Sem Testcontainers.** Os testes de integração usam o Postgres do `docker-compose.yml` num banco separado (`crash_game_test`); no CI, um service container do GitHub Actions com a mesma imagem (`postgres:18-alpine`) | O AI Jail não tem Docker, e montar o socket do host ou usar Docker-in-Docker privilegiado anularia o isolamento da D18. O Postgres do compose já está na rede `crash-game` |
+| D40 | **Mecânica do banco de teste.** Um `globalSetup` do Vitest cria o `crash_game_test` se faltar (`orm.schema.ensureDatabase()`) e roda as migrations (`orm.migrator.up()`) uma vez por execução; recusa rodar se o nome do banco não terminar em `_test`. Cada teste começa com `TRUNCATE ... RESTART IDENTITY CASCADE` de todas as tabelas. Os testes de integração ficam num projeto Vitest próprio (`*.int-spec.ts`, `vitest.config.integration.ts`, script `test:int`) com **arquivos em sequência** (`fileParallelism: false`); os unitários continuam em paralelo e sem banco. No CI, um job `integration` com service container | Sem passo manual no jail nem no CI. O banco de teste passa pelas mesmas migrations de produção. Rollback por transação não serve aos testes de concorrência, que precisam de commits reais; e dois arquivos fazendo `TRUNCATE` ao mesmo tempo no mesmo banco gerariam falhas intermitentes |
+| D41 | **Modelo de persistência separado do domínio.** Registros definidos com `defineEntity` do MikroORM 7, sem decorators; mapeadores convertem com `toSnapshot()` e `restore(snapshot)` dos agregados. O `Round.restore` recalcula o crash point (da seed e do id) e o `crashAt` e lança erro se o banco divergir. Os repositórios fazem escritas explícitas (`upsert`/`insert`) com o `EntityManager` recebido, sem depender do rastreamento de mudanças; a transação é aberta por quem chama (`em.transactional`) | O domínio continua sem imports do ORM e com os campos `#privados` da D30. A verificação no restore detecta linha corrompida ou adulterada. Com modelos separados, o rastreamento do unit of work só acrescentaria uma cópia |
+| D42 | **Tipos no banco:** dinheiro em `bigint` lido no modo `'number'` do MikroORM e validado pelo `Money.fromCents` (inteiro seguro); multiplicadores em `integer`; datas em `timestamptz`, convertidas para ms nos mapeadores, com `forceUtcTimezone` | Com o teto da D24 os valores cabem em `number` com folga; se um dia não couberem, o `Money` lança erro em vez de perder precisão em silêncio |
+| D43 | **Configuração por `DATABASE_URL`** (e `TEST_DATABASE_URL` nos testes), validada pela função pura `readDatabaseConfig(env)`. O `.env` da raiz é carregado pelo Node (`--env-file-if-exists`) nos scripts e pelo `loadEnv` do Vite no Vitest; em produção, as variáveis vêm da plataforma. Sem `@nestjs/config` | Railway e Render entregam `DATABASE_URL` pronta. Duas variáveis não justificam um módulo e o `dotenv`; reavaliar no M3 se a configuração crescer |
+| D44 | **Ferramentas de migration:** `@mikro-orm/cli` com `tsx` como loader de TypeScript. O CI roda `migration:check` para garantir que nenhuma mudança de schema ficou sem migration. A API não aplica migrations sozinha no boot; há um script explícito | Migrations geradas a partir dos registros, sem SQL escrito à mão para o schema base; o `migration:check` impede divergência entre registros e migrations |
+| D45 | **Ajustes do domínio para persistir:** o `Bet` guarda `placedAt`; o `BetRepository` carrega a aposta com lock (`getByIdAndPlayerForUpdate`, seção 10.2); o `Wallet` é reconstruído com saldo e `version`, sem o extrato completo, e separa os lançamentos novos (`pullNewEntries()`); `wallets.version` vira uma segunda barreira (`UPDATE ... WHERE version = ?`) além do lock pessimista. Todas as tabelas da seção 9 são criadas no M2; `players` e `idempotency_keys` só ganham repositórios no M3 | A tabela `bets` tem `created_at`; a 10.2 pede lock na aposta; carregar o extrato inteiro a cada operação não escala; a `version` protege contra um caso de uso que esqueça o lock |
 
 ### Decisões pendentes
 
@@ -200,6 +207,7 @@ Invariantes:
 | `status` | `PENDING`, `CASHED_OUT` ou `LOST` |
 | `cashoutMultiplier` | Definido no cash out |
 | `payout` | `amount × cashoutMultiplier`, arredondado para baixo |
+| `placedAt` | Instante da aposta (`now` do `place`, D45) |
 
 Invariantes:
 - Só pode ser criada se a rodada estiver em `BETTING` e `now < bettingEndsAt`.
@@ -214,7 +222,8 @@ Invariantes:
 - Um por jogador. Saldo inicial: **1.000,00 créditos** (100000 centavos).
 - `debit(amount)` lança `InsufficientBalanceError` se o saldo ficar negativo.
 - Toda movimentação gera um `LedgerEntry` (`BET_PLACED`, `CASHOUT`, `INITIAL_GRANT`), com valor em centavos com sinal (débito negativo), `betId` quando houver e `createdAt`. O `LedgerEntry` não tem `id` no domínio; o banco gera (D37).
-- Invariante: o saldo é sempre igual à soma do extrato. Isso vira um teste.
+- Invariante: o saldo é sempre igual à soma do extrato. Isso vira um teste no domínio (carteira aberta em memória) e no banco (`SUM(amount) = balance`).
+- Reconstruída do banco com saldo e `version`, sem o extrato completo; os lançamentos novos saem por `pullNewEntries()` para o repositório gravar (D45).
 
 ### 6.5 Eventos de domínio
 
@@ -312,7 +321,7 @@ O cliente não envia ações pelo WS. O canal é só de leitura, e a conexão n�
 | Tabela | Colunas principais | Restrições |
 |---|---|---|
 | `players` | `id`, `nickname`, `token_hash`, `created_at` | `token_hash` único; o token é guardado como hash, nunca em texto puro |
-| `wallets` | `player_id` (PK/FK), `balance`, `version` | `CHECK (balance >= 0)` |
+| `wallets` | `player_id` (PK/FK), `balance`, `version` | `CHECK (balance >= 0)`; `version` como segunda barreira além do lock pessimista (D45) |
 | `ledger_entries` | `id` (identity, gerado pelo banco; D37), `player_id`, `type`, `amount` (com sinal), `bet_id`, `created_at` | índice em `(player_id, created_at)` |
 | `rounds` | `id`, `status`, `server_seed`, `seed_hash`, `crash_point`, `betting_ends_at`, `started_at`, `crash_at`, `crashed_at` | índice em `(status)` e `(crashed_at)` |
 | `bets` | `id`, `round_id`, `player_id`, `amount`, `status`, `cashout_multiplier`, `payout`, `created_at` | `UNIQUE (round_id, player_id)` |
@@ -340,7 +349,7 @@ Depois do commit: emite `BetPlaced`, que vira o broadcast `bet:placed`.
 
 Em uma única transação:
 1. Verifica a idempotência.
-2. Carrega a aposta do jogador com lock (`findByIdAndPlayer`; aposta de outro jogador responde 404, D33) e valida que está `PENDING`.
+2. Carrega a aposta do jogador com lock (`getByIdAndPlayerForUpdate`; aposta de outro jogador responde 404, D33) e valida que está `PENDING`.
 3. Carrega a rodada e valida `RUNNING` e `now < crashAt` (rodada já crashada também é `TOO_LATE`, D34). **É essa comparação com `crashAt` que resolve a corrida com o game loop:** o momento do crash é fixo e conhecido de antemão, então não importa se o loop atrasou.
 4. `multiplier = multiplierAt(now − startedAt)`; `payout = amount × multiplier`.
 5. Credita na carteira (com lock) e grava o `LedgerEntry`.
@@ -392,9 +401,11 @@ criar rodada (BETTING, 10 s) → start() → ticks a cada 100 ms → em crashAt:
 |---|---|---|
 | Unitário (domínio) | VOs, transições de `Round`, regras de `Bet` e `Wallet`, fórmulas | Vitest |
 | Unitário (shared) | `multiplierAt`, `timeToCrash` | Vitest |
-| Integração (api) | Repositórios, transações, locks, idempotência, recuperação no boot | Vitest + Testcontainers + Postgres |
+| Integração (api) | Repositórios, transações, locks, idempotência, recuperação no boot | Vitest + Postgres 18 (banco `crash_game_test` do compose; service container no CI, D39) |
 | E2E (api) | Fluxo completo: guest → aposta → cash out → crash, ouvindo o WS | Vitest + Supertest + cliente `ws` |
 | Front | Store, cálculo de offset do relógio, lógica de reconexão (com WebSocket falso) | Vitest |
+
+Banco de teste (D39, D40): `crash_game_test` no Postgres do compose, criado e migrado pelo `globalSetup`; `TRUNCATE` antes de cada teste. **Os arquivos de integração rodam em sequência** (`fileParallelism: false` no `vitest.config.integration.ts`), porque todos usam o mesmo banco; os unitários continuam em paralelo. Rodar com `pnpm --filter @crash/api test:int`.
 
 Testes de concorrência obrigatórios:
 - Duas requisições de aposta simultâneas com a mesma `Idempotency-Key` → um débito só
@@ -432,7 +443,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [ ] Entidades e mapeamentos
 - [ ] Migrations iniciais
 - [ ] Repositórios implementando as interfaces do domínio
-- [ ] Testes de integração com Testcontainers
+- [ ] Testes de integração com o Postgres de teste (D39)
 
 ### M3 — API e tempo real (6 h)
 - [ ] Guest e autenticação por token
