@@ -1,5 +1,9 @@
 import { Money } from '../../shared/domain/money.js';
-import { InsufficientBalanceError, Wallet } from './wallet.js';
+import {
+  CorruptedWalletError,
+  InsufficientBalanceError,
+  Wallet,
+} from './wallet.js';
 
 const OPENED_AT = 1_700_000_000_000;
 
@@ -116,5 +120,101 @@ describe('Wallet', () => {
         now: OPENED_AT,
       }),
     ).toThrow(expect.objectContaining({ code: 'INSUFFICIENT_BALANCE' }));
+  });
+});
+
+describe('Wallet: lançamentos novos, snapshot e restore', () => {
+  const ctx = (betId: string, now = OPENED_AT + 1) => ({ betId, now });
+
+  it('depois do open, pullNewEntries devolve o INITIAL_GRANT e esvazia a lista', () => {
+    const wallet = Wallet.open({ playerId: 'player-1', now: OPENED_AT });
+    expect(wallet.pullNewEntries()).toEqual([
+      {
+        type: 'INITIAL_GRANT',
+        amount: 100_000,
+        betId: null,
+        createdAt: OPENED_AT,
+      },
+    ]);
+    expect(wallet.pullNewEntries()).toEqual([]);
+  });
+
+  it('debit e credit depois de um pull aparecem só no pull seguinte, em ordem', () => {
+    const wallet = Wallet.open({ playerId: 'player-1', now: OPENED_AT });
+    wallet.pullNewEntries();
+    wallet.debit(Money.fromCents(1_000), ctx('bet-1'));
+    wallet.credit(Money.fromCents(6_040), ctx('bet-1', OPENED_AT + 2));
+
+    expect(wallet.pullNewEntries().map((e) => [e.type, e.amount])).toEqual([
+      ['BET_PLACED', -1_000],
+      ['CASHOUT', 6_040],
+    ]);
+    expect(wallet.pullNewEntries()).toEqual([]);
+  });
+
+  it('restore traz saldo e versão e começa sem lançamentos', () => {
+    const wallet = Wallet.restore({
+      playerId: 'player-1',
+      balance: Money.fromCents(4_321),
+      version: 7,
+    });
+    expect(wallet.playerId).toBe('player-1');
+    expect(wallet.balance.cents).toBe(4_321);
+    expect(wallet.version).toBe(7);
+    expect(wallet.entries).toEqual([]);
+    expect(wallet.pullNewEntries()).toEqual([]);
+  });
+
+  it('numa carteira reconstruída, o debit respeita o saldo e saldo = reconstruído + novos', () => {
+    const restoredBalance = 4_321;
+    const wallet = Wallet.restore({
+      playerId: 'player-1',
+      balance: Money.fromCents(restoredBalance),
+      version: 7,
+    });
+    expect(() =>
+      wallet.debit(Money.fromCents(restoredBalance + 1), ctx('bet-1')),
+    ).toThrow(InsufficientBalanceError);
+
+    wallet.debit(Money.fromCents(1_000), ctx('bet-2'));
+    wallet.credit(Money.fromCents(2_500), ctx('bet-2'));
+    const added = wallet
+      .pullNewEntries()
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    expect(wallet.balance.cents).toBe(restoredBalance + added);
+    expect(wallet.balance.cents).toBe(5_821);
+  });
+
+  it('toSnapshot devolve playerId, saldo e versão; open começa na versão 0', () => {
+    const opened = Wallet.open({ playerId: 'player-1', now: OPENED_AT });
+    const snapshot = opened.toSnapshot();
+    expect(snapshot.playerId).toBe('player-1');
+    expect(snapshot.balance.cents).toBe(100_000);
+    expect(snapshot.version).toBe(0);
+    expect(Object.keys(snapshot).sort()).toEqual(
+      ['balance', 'playerId', 'version'].sort(),
+    );
+
+    const restored = Wallet.restore({ ...snapshot, version: 3 });
+    expect(restored.toSnapshot().version).toBe(3);
+  });
+
+  it('restore lança CorruptedWalletError (CORRUPTED_WALLET) com versão inválida', () => {
+    for (const version of [-1, 1.5, Number.NaN]) {
+      expect(() =>
+        Wallet.restore({
+          playerId: 'player-1',
+          balance: Money.fromCents(0),
+          version,
+        }),
+      ).toThrow(CorruptedWalletError);
+    }
+    expect(() =>
+      Wallet.restore({
+        playerId: 'player-1',
+        balance: Money.fromCents(0),
+        version: -1,
+      }),
+    ).toThrow(expect.objectContaining({ code: 'CORRUPTED_WALLET' }));
   });
 });
