@@ -1,18 +1,21 @@
-import type { GuestRequest } from '@crash/shared';
+import {
+  type GuestRequest,
+  NICKNAME_MAX_LENGTH,
+  NICKNAME_MIN_LENGTH,
+  parseNickname,
+} from '@crash/shared';
 import { InvalidRequestError } from '../shared/infrastructure/http/request-errors.js';
 
-/** O nickname é transmitido a todos pelo WS: só letras ASCII, dígitos, _ e - (D59). */
-const NICKNAME = /^[A-Za-z0-9_-]{3,16}$/;
-
+/** As regras do nickname vêm do `@crash/shared`, as mesmas do formulário (D59, D72). */
 export function parseGuestBody(body: unknown): GuestRequest {
   const raw =
     typeof body === 'object' && body !== null && 'nickname' in body
       ? body.nickname
       : undefined;
-  const nickname = typeof raw === 'string' ? raw.trim() : undefined;
-  if (nickname === undefined || !NICKNAME.test(nickname)) {
+  const nickname = typeof raw === 'string' ? parseNickname(raw) : null;
+  if (nickname === null) {
     throw new InvalidRequestError(
-      'nickname deve ter de 3 a 16 caracteres entre letras sem acento, dígitos, _ e -',
+      `nickname deve ter de ${NICKNAME_MIN_LENGTH} a ${NICKNAME_MAX_LENGTH} caracteres entre letras sem acento, dígitos, _ e -`,
     );
   }
   return { nickname };
