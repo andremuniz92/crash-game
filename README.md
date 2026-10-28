@@ -1,7 +1,46 @@
 # Crash Game
 
+[![CI](https://github.com/andremuniz92/crash-game/actions/workflows/ci.yml/badge.svg)](https://github.com/andremuniz92/crash-game/actions/workflows/ci.yml)
+
+**Status:** back-end completo (M0 a M3); front em desenvolvimento.
+
 Crash game multiplayer com rodada global, usando créditos fictícios. Projeto de portfólio.
 As decisões de arquitetura estão no [CLAUDE.md](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
+
+## Destaques
+
+- **Sem corrida entre cash out e crash.** Ordem fixa de locks (rodada → aposta → carteira): o
+  crash espera os cash outs em andamento e nunca grava "perdeu" por cima de um saque aceito.
+  [D57](./CLAUDE.md#4-decisões-registradas-adrs-resumidos), [fluxos críticos](./CLAUDE.md#10-fluxos-críticos-e-concorrência).
+- **Idempotência com hash do corpo.** Repetir a mesma requisição devolve a resposta original, mesmo
+  com as duas chegando ao mesmo tempo; a mesma chave com outro valor responde 422.
+  [D60](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
+- **Provably fair com verificação pública.** O hash da seed sai antes das apostas; depois do crash,
+  qualquer pessoa confere a seed e recalcula o resultado.
+  [D7, D23, D30](./CLAUDE.md#4-decisões-registradas-adrs-resumidos), [fórmula](./CLAUDE.md#72-crash-point-provably-fair-inspirado-no-modelo-do-bustabit).
+- **Testes de concorrência determinísticos, sem `sleep`.** O teste segura o lock, dispara as
+  operações e pergunta ao Postgres (`pg_locks`) se elas estão esperando antes de soltar.
+  [D54](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
+- **Testes que provam que pegam a falha.** Em cada fase, o código que protege uma regra foi removido
+  de propósito para confirmar que o teste falha (mutação manual). [Testes](./CLAUDE.md#12-testes).
+- **372 testes:** 246 unitários, 85 de integração com Postgres real e 41 E2E por HTTP e WebSocket,
+  todos no CI. [D39, D40, D66](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
+
+## Como foi desenvolvido
+
+O código foi escrito com IA agêntica (Claude Code), seguindo um processo definido no
+[CLAUDE.md](./CLAUDE.md#2-regras-de-colaboração-método-akita):
+
+- O agente roda isolado num container, sem acesso a segredos do host. Ele não faz commit nem push
+  (regra do projeto), e o container não tem as credenciais para isso. Eu reviso o diff e faço os
+  commits.
+- As decisões de arquitetura são minhas. O agente propõe e questiona, e cada decisão aprovada fica
+  registrada na seção 4 do CLAUDE.md antes de virar código.
+- Cada fase começa com a lista de testes, que eu aprovo antes de qualquer implementação.
+- TDD: o teste é escrito primeiro, o vermelho é confirmado (com a classe de erro já existente, para
+  não haver falso verde) e só então vem a implementação. As barreiras de concorrência e de
+  segurança ganham um teste de mutação.
+- Ao fim de cada fase, testes, lint, typecheck, formatação e build rodam antes da minha revisão.
 
 ## Estrutura
 
