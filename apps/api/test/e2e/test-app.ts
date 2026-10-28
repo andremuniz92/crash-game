@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
+import type { Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
+import { WsAdapter } from '@nestjs/platform-ws';
 import { Test } from '@nestjs/testing';
 import type { App } from 'supertest/types.js';
 import { AppModule } from '../../src/app.module.js';
@@ -45,16 +47,21 @@ export class QueuedGenerators implements IdGenerator, SeedGenerator {
 
 /**
  * App completa apontando para o banco de teste (D66), sem o game loop: ele só
- * é ligado pelo main.ts (D61). O teste chama o `GameLoopStep` à mão.
+ * é ligado pelo main.ts (D61). O teste chama o `GameLoopStep` à mão. Escuta
+ * numa porta aleatória, com o WsAdapter do main.ts, para os testes do WS.
  */
 export async function createTestApp(
-  overrides: { clock?: Clock; generators?: QueuedGenerators } = {},
+  overrides: {
+    clock?: Clock;
+    generators?: QueuedGenerators;
+    tickMs?: number;
+  } = {},
 ): Promise<INestApplication<App>> {
   const config: AppConfig = {
     port: 0,
     database: readTestDatabaseConfig(process.env),
     bettingMs: BETTING_MS,
-    tickMs: 100,
+    tickMs: overrides.tickMs ?? 100,
     pauseMs: PAUSE_MS,
     wsHeartbeatMs: 30_000,
   };
@@ -75,6 +82,16 @@ export async function createTestApp(
   const app = moduleRef.createNestApplication<INestApplication<App>>({
     logger: false,
   });
-  await app.init();
+  app.useWebSocketAdapter(new WsAdapter(app));
+  await app.listen(0, '127.0.0.1');
   return app;
+}
+
+/** URL do WebSocket da app (`/ws`, seção 8.2). */
+export function wsUrl(app: INestApplication<App>): string {
+  const address = (app.getHttpServer() as unknown as Server).address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('a app de teste não está escutando numa porta TCP');
+  }
+  return `ws://127.0.0.1:${address.port}/ws`;
 }
