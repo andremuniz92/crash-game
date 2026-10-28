@@ -102,6 +102,7 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D43 | **Configuração por `DATABASE_URL`** (e `TEST_DATABASE_URL` nos testes), validada pela função pura `readDatabaseConfig(env)`. O `.env` da raiz é carregado pelo Node (`--env-file-if-exists`) nos scripts e pelo `loadEnv` do Vite no Vitest; em produção, as variáveis vêm da plataforma. Sem `@nestjs/config` | Railway e Render entregam `DATABASE_URL` pronta. Duas variáveis não justificam um módulo e o `dotenv`; reavaliar no M3 se a configuração crescer |
 | D44 | **Ferramentas de migration:** `@mikro-orm/cli` com `tsx` como loader de TypeScript. O CI roda `migration:check` para garantir que nenhuma mudança de schema ficou sem migration. A API não aplica migrations sozinha no boot; há um script explícito | Migrations geradas a partir dos registros, sem SQL escrito à mão para o schema base; o `migration:check` impede divergência entre registros e migrations |
 | D45 | **Ajustes do domínio para persistir:** o `Bet` guarda `placedAt`; o `BetRepository` carrega a aposta com lock (`getByIdAndPlayerForUpdate`, seção 10.2); o `Wallet` é reconstruído com saldo e `version`, sem o extrato completo, e separa os lançamentos novos (`pullNewEntries()`); `wallets.version` vira uma segunda barreira (`UPDATE ... WHERE version = ?`) além do lock pessimista. Todas as tabelas da seção 9 são criadas no M2; `players` e `idempotency_keys` só ganham repositórios no M3 | A tabela `bets` tem `created_at`; a 10.2 pede lock na aposta; carregar o extrato inteiro a cada operação não escala; a `version` protege contra um caso de uso que esqueça o lock |
+| D46 | **Scripts de instalação bloqueados por padrão:** `allowBuilds` do pnpm 11 com `esbuild: false` (dependência do `tsx`). Novos pacotes com script de build entram como `false`, salvo justificativa registrada | Nenhum código de terceiro roda durante o install; o `tsx` funciona sem o script, porque o binário do esbuild vem pelo pacote opcional da plataforma |
 
 ### Decisões pendentes
 
@@ -439,7 +440,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [x] Eventos de domínio
 
 ### M2 — Persistência (5 h)
-- [ ] Configuração do MikroORM
+- [x] Configuração do MikroORM
 - [ ] Entidades e mapeamentos
 - [ ] Migrations iniciais
 - [ ] Repositórios implementando as interfaces do domínio
