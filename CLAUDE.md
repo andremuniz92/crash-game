@@ -111,6 +111,18 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D52 | **`BetAlreadyPlacedError`** (`BET_ALREADY_PLACED`, em `bets/domain`) é lançado pelo repositório ao reconhecer, pelo nome, a violação de `bets_round_id_player_id_unique` | A camada HTTP (M3) trata a última barreira da D33 pelo `code`, como os outros erros |
 | D53 | **Versão da carteira:** `version 0` = nunca gravada → `INSERT` com `version = 1`; gravada → `UPDATE ... SET version = version + 1 WHERE version = <carregada>`, e zero linhas afetadas lança `WalletVersionConflictError` (`WALLET_VERSION_CONFLICT`). Os lançamentos de `pullNewEntries()` entram na mesma chamada. Uma gravação por carregamento. `getForUpdate` de jogador sem carteira lança `WalletNotFoundError` (`WALLET_NOT_FOUND`). Os dois erros ficam em `wallet/domain`, junto da interface | Implementa a segunda barreira da D45. Todo jogador tem carteira, então carteira ausente é bug, não `null` |
 | D54 | **Testes de concorrência dos locks** usam duas transações reais e promessas de controle para forçar a ordem (T1 segura o lock até um sinal; T2 tenta o mesmo lock) e provam que T2 só termina depois do commit de T1 e enxerga o valor dele | Teste determinístico, sem depender de `sleep`; é a base dos testes de concorrência da seção 12 no M3 |
+| D55 | **Casos de uso em TypeScript puro.** As classes de `application/` não importam NestJS nem MikroORM; os módulos do Nest as montam com `useFactory`. O `domain/` e o `application/` de um contexto só importam o próprio contexto e o `shared/`. Um teste de arquitetura verifica as duas regras. Todo caso de uso lê o `Clock` uma vez, no início do `execute` e antes da transação, e repassa o `now` (D29); segue "carregar, alterar, gravar uma vez" (D53). Ids e seeds vêm das portas `IdGenerator` e `SeedGenerator` (D22) | A aplicação continua testável sem framework; a regra de dependência da seção 5 passa a ser verificada, como a D47 |
+| D56 | **`UnitOfWork`** (porta em `shared/application`): `run(work: (tx) => Promise<T>)`. A implementação abre `orm.em.transactional` e entrega ao `work` os `MikroOrm*Repository` criados com o `em` daquela transação (D50). Cada caso de uso tipa só as dependências que usa (`UnitOfWork<{ bets; rounds; wallet }>`). Entre contextos, a conversa é por portas declaradas na aplicação de quem chama e satisfeitas por tipagem estrutural (ex.: `WalletPort` em `bets/application`, implementada pelo `wallet/application`). O `MikroORM` é criado por um provider próprio, sem `@mikro-orm/nestjs`, e fechado no shutdown | Fronteira de transação explícita, sem AsyncLocalStorage: um repositório nunca cai no EM global sem querer. O tipo impede que um caso de uso alcance o repositório de outro contexto |
+| D57 | **Ordem de locks: rodada → aposta → carteira.** Aposta: rodada `FOR SHARE`, carteira `FOR UPDATE`. Cash out: lê a aposta sem lock para achar a rodada, depois rodada `FOR SHARE`, aposta `FOR UPDATE` e carteira `FOR UPDATE`. `start()` e `crash()` com a liquidação carregam a rodada `FOR UPDATE`. O `RoundRepository` ganha `findCurrentForShare`, `findByIdForShare` e `getForUpdate` (exigem transação, como na D50) | Sem o lock na rodada, a liquidação pode gravar `LOST` por cima de um cash out em andamento, e uma aposta que esperou o lock da carteira pode entrar numa rodada já iniciada ou liquidada. Com ele, o loop espera as operações em andamento e quem chega depois vê o novo status. A ordem fixa evita deadlock |
+| D58 | **Erros → HTTP** por um filtro global com uma tabela `code → status`: 400 (entrada inválida, `INVALID_BET_AMOUNT`, header de idempotência), 401 (`UNAUTHORIZED`), 404 (`BET_NOT_FOUND`, `ROUND_NOT_FOUND`), 409 (`ROUND_NOT_ACCEPTING_BETS`, `BET_ALREADY_PLACED`, `ROUND_NOT_RUNNING`, `BET_NOT_PENDING`, `TOO_LATE`, `SECRET_NOT_REVEALED`), 422 (`INSUFFICIENT_BALANCE`, `IDEMPOTENCY_KEY_REUSED`) e 500 explícito para bugs (`CORRUPTED_*`, `WALLET_NOT_FOUND`, `WALLET_VERSION_CONFLICT`, transições inválidas), com mensagem genérica e o erro no log. Os erros do próprio Nest saem como `{ code, message }`. Um teste falha se algum `code` de `src/` ficar fora da tabela ou se a tabela citar um código que não existe. Validação de entrada em funções puras, sem class-validator nem zod | Todo erro novo precisa ser classificado; bug não vaza detalhe ao cliente. Os corpos são mínimos e não justificam dependência |
+| D59 | **Guest e autenticação:** token de 32 bytes aleatórios em base64url, guardado como `sha256` hex em `token_hash`. O `AuthGuard` resolve o `Bearer` para `{ id, nickname }`; ausente ou inválido → 401 `UNAUTHORIZED`. Nickname aparado e restrito a `^[A-Za-z0-9_-]{3,16}$`, sem unicidade. Jogador e carteira (`Wallet.open`) nascem na mesma transação; o `players` (sem DDD) abre a carteira pelo `wallet/application` | O nickname é transmitido a todos pelo WS. Sem jogador sem carteira (D53) |
+| D60 | **Idempotência na transação do caso de uso**, sem middleware do Nest. O HTTP valida o header (ausente → 400 `IDEMPOTENCY_KEY_REQUIRED`; não UUID → 400 `INVALID_IDEMPOTENCY_KEY`). Na transação, um `pg_advisory_xact_lock` por (jogador, chave) serializa as requisições com a mesma chave; a resposta salva é devolvida se `endpoint` (com o id real, ex.: `POST /bets/<id>/cashout`) e `request_hash` coincidirem, e qualquer diferença responde 422 `IDEMPOTENCY_KEY_REUSED`. `request_hash` é o SHA-256 hex do JSON canônico (chaves ordenadas) da entrada já validada, numa migration nova (`varchar(64) not null`; a tabela ainda não tem escritor). Só respostas de sucesso são salvas; erro faz rollback e pode ser repetido. Replay não publica eventos | Dinheiro: a mesma chave com outro valor não pode devolver a resposta de outra operação. O advisory lock dispensa linha "em andamento" no schema |
+| D61 | **Game loop como `step()`:** lê o estado do banco e o `now`, executa a ação devida (criar, iniciar, crashar e liquidar) e devolve a espera até a próxima. A recuperação no boot (10.3) é o primeiro `step()`, não um caminho à parte. O crash é agendado por `Round.msUntilCrash(now)` (só em `RUNNING`); como `toSnapshot()`, a chamada só é permitida no game loop, verificada pelo teste da D47. Ticks saem da rodada em memória. Falha no `step()` vai para o log e tenta de novo em 1 s. O loop é ligado no `main.ts`, então os testes sobem a app sem ele e chamam `step()` com `FakeClock` e `SeedGenerator` fixo | Recuperação testada com banco real e `FakeClock`, sem timers. `msUntilCrash` revela `crashAt` a quem o chama (D30) |
+| D62 | **Eventos para o WS:** porta `EventPublisher` com implementação em memória, sem `@nestjs/event-emitter`. Os casos de uso publicam os eventos de domínio depois do commit. O gateway (`/ws`, `WsAdapter`) traduz para a seção 8.2; o `nickname` vem de um cache em memória id → nickname, preenchido por consulta no primeiro uso. Heartbeat: ping a cada `WS_HEARTBEAT_MS`, quem não responder é derrubado (D15) | Evento de rollback nunca chega ao cliente. O nickname não muda, então o cache não invalida |
+| D63 | **Leituras e contrato:** `GET /rounds/current` é montado a partir do agregado (sem getter de segredo) num DTO sem campos para os segredos; sem rodada aberta, devolve a última crashada, já revelada; com `Bearer` opcional, inclui `myBet`. Histórico e extrato são consultas diretas na infraestrutura; o histórico filtra `status = 'CRASHED'`. DTOs e eventos WS ficam no `@crash/shared`. Instantes trafegam em ms desde a epoch. `POST /bets` responde 201 e o cash out, 200 | O tipo impede vazar segredo. O cliente que reconecta precisa do `betId` para sacar |
+| D64 | **Configuração sem `@nestjs/config`** (reavaliação da D43): a função pura `readAppConfig(env)` lê e valida `PORT`, `DATABASE_URL`, `BETTING_MS`, `TICK_MS`, `PAUSE_MS` e `WS_HEARTBEAT_MS`, com padrões para os tempos, e é fornecida ao Nest por um token | Seis variáveis tipadas e testadas; o `@nestjs/config` traria `dotenv` e um `get<string>()` sem tipo, e a validação seria escrita do mesmo jeito |
+| D65 | **`pnpm dev` da api:** `tsc --watch` e `node --watch --env-file-if-exists=../../.env dist/main.js` em paralelo (`pnpm run "/^dev:/"`); o `node --watch` também reinicia quando muda o `dist` do `@crash/shared` | O `nest start --watch` não vê mudanças no `shared`, e o M3 mexe nele o tempo todo. `tsx watch` não serve: o esbuild não gera `emitDecoratorMetadata` |
+| D66 | **E2E** (`*.e2e-spec.ts`, `test:e2e`) usam o mesmo `globalSetup` e o mesmo `TRUNCATE` da integração, com arquivos em sequência, e rodam no job `integration` do CI. O cliente WS dos testes é o `WebSocket` global do Node, sem `ws` nem `@types/ws` | Mesmo banco de teste (D39, D40); nenhuma dependência nova |
 
 ### Decisões pendentes
 
@@ -298,13 +310,13 @@ Ações que mexem com saldo exigem o header `Idempotency-Key: <uuid>`.
 |---|---|---|---|
 | `POST /players/guest` | `{ nickname }` (3 a 16 caracteres) | `{ playerId, nickname, token, balance }` | 400 |
 | `GET /wallet` | — | `{ balance, entries[] }` (últimos 20 lançamentos) | 401 |
-| `GET /rounds/current` | — | estado atual da rodada, apostas da rodada e `serverTime`; nunca inclui `crashPoint`, `crashAt` nem `serverSeed` antes do crash (D30) | — |
+| `GET /rounds/current` | — (`Bearer` opcional) | estado atual da rodada (ou a última crashada, se nenhuma estiver aberta), apostas da rodada, `myBet` se houver `Bearer`, e `serverTime`; nunca inclui `crashPoint`, `crashAt` nem `serverSeed` antes do crash (D30, D63) | 401 se o `Bearer` vier inválido |
 | `GET /rounds/history?limit=20` | — | `[{ id, crashPoint, crashedAt }]` | — |
 | `GET /rounds/:id/verify` | — | `{ serverSeed, seedHash, crashPoint }` | 404; 409 se a rodada ainda não crashou |
-| `POST /bets` | `{ amount }` | `{ betId, roundId, amount, balance }` | 400, 401, 409 (`ROUND_NOT_ACCEPTING_BETS`, `BET_ALREADY_PLACED`), 422 (`INSUFFICIENT_BALANCE`) |
-| `POST /bets/:id/cashout` | — | `{ betId, multiplier, payout, balance }` | 401, 404, 409 (`ROUND_NOT_RUNNING`, `BET_NOT_PENDING`, `TOO_LATE`) |
+| `POST /bets` | `{ amount }` | `{ betId, roundId, amount, balance }` | 400, 401, 409 (`ROUND_NOT_ACCEPTING_BETS`, `BET_ALREADY_PLACED`), 422 (`INSUFFICIENT_BALANCE`, `IDEMPOTENCY_KEY_REUSED`) |
+| `POST /bets/:id/cashout` | — | `{ betId, multiplier, payout, balance }` | 400, 401, 404, 409 (`ROUND_NOT_RUNNING`, `BET_NOT_PENDING`, `TOO_LATE`), 422 (`IDEMPOTENCY_KEY_REUSED`) |
 
-Valores monetários trafegam como **inteiros em centavos**. Multiplicadores trafegam como **inteiros ×100**. A formatação é responsabilidade do front.
+Valores monetários trafegam como **inteiros em centavos**. Multiplicadores trafegam como **inteiros ×100**. Instantes trafegam em **ms desde a epoch** (D63). A formatação é responsabilidade do front. O mapeamento de `code` para status está na D58.
 
 Formato de erro: `{ code: string, message: string }`.
 
@@ -334,7 +346,7 @@ O cliente não envia ações pelo WS. O canal é só de leitura, e a conexão n�
 | `ledger_entries` | `id` (identity, gerado pelo banco; D37), `player_id`, `type`, `amount` (com sinal), `bet_id`, `created_at` | índice em `(player_id, created_at)` |
 | `rounds` | `id`, `status`, `server_seed`, `seed_hash`, `crash_point`, `betting_ends_at`, `started_at`, `crash_at`, `crashed_at` | índice em `(status)` e `(crashed_at)` |
 | `bets` | `id`, `round_id`, `player_id`, `amount`, `status`, `cashout_multiplier`, `payout`, `created_at` | `UNIQUE (round_id, player_id)` |
-| `idempotency_keys` | `key`, `player_id`, `endpoint`, `response_status`, `response_body`, `created_at` | PK `(player_id, key)` |
+| `idempotency_keys` | `key`, `player_id`, `endpoint`, `request_hash`, `response_status`, `response_body`, `created_at` | PK `(player_id, key)`; `request_hash` é o SHA-256 da entrada validada (D60) |
 
 Valores em centavos usam `bigint`; multiplicadores usam `integer` (×100).
 Toda mudança de schema é feita por **migration** do MikroORM, nunca por `schema:update`.
@@ -345,9 +357,11 @@ Toda mudança de schema é feita por **migration** do MikroORM, nunca por `schem
 
 ### 10.1 Fazer aposta (`POST /bets`)
 
+O `now` é lido uma vez, antes da transação (D55). Locks na ordem rodada → aposta → carteira (D57).
+
 Em uma única transação:
-1. Se a `Idempotency-Key` já existe para esse jogador, devolve a resposta salva.
-2. Carrega a rodada atual e valida `BETTING` e `now < bettingEndsAt`.
+1. Advisory lock por (jogador, chave). Se a `Idempotency-Key` já existe para esse jogador, devolve a resposta salva; com outro endpoint ou outro corpo, 422 `IDEMPOTENCY_KEY_REUSED` (D60).
+2. Carrega a rodada atual com `FOR SHARE` e valida `BETTING` e `now < bettingEndsAt`.
 3. Carrega a carteira com **lock pessimista** (`SELECT ... FOR UPDATE`).
 4. Debita, grava o `LedgerEntry` e cria a `Bet`. O `UNIQUE (round_id, player_id)` é a última barreira contra aposta duplicada.
 5. Salva a resposta na tabela de idempotência.
@@ -357,9 +371,9 @@ Depois do commit: emite `BetPlaced`, que vira o broadcast `bet:placed`.
 ### 10.2 Cash out (`POST /bets/:id/cashout`)
 
 Em uma única transação:
-1. Verifica a idempotência.
-2. Carrega a aposta do jogador com lock (`getByIdAndPlayerForUpdate`; aposta de outro jogador responde 404, D33) e valida que está `PENDING`.
-3. Carrega a rodada e valida `RUNNING` e `now < crashAt` (rodada já crashada também é `TOO_LATE`, D34). **É essa comparação com `crashAt` que resolve a corrida com o game loop:** o momento do crash é fixo e conhecido de antemão, então não importa se o loop atrasou.
+1. Verifica a idempotência, como na 10.1.
+2. Lê a aposta do jogador sem lock só para achar a rodada (aposta de outro jogador responde 404, D33) e carrega a rodada com `FOR SHARE` (D57).
+3. Carrega a aposta com lock (`getByIdAndPlayerForUpdate`) e valida que está `PENDING`; valida a rodada em `RUNNING` e `now < crashAt` (rodada já crashada também é `TOO_LATE`, D34). **É essa comparação com `crashAt` que resolve a corrida com o game loop:** o momento do crash é fixo e conhecido de antemão, então não importa se o loop atrasou.
 4. `multiplier = multiplierAt(now − startedAt)`; `payout = amount × multiplier`.
 5. Credita na carteira (com lock) e grava o `LedgerEntry`.
 
@@ -371,7 +385,8 @@ criar rodada (BETTING, 10 s) → start() → ticks a cada 100 ms → em crashAt:
 ```
 
 - O loop agenda o crash para `crashAt` e não depende dos ticks para isso.
-- **Recuperação no boot:** se existir rodada `RUNNING` com `crashAt` no passado, finaliza e liquida. Se existir rodada `BETTING` vencida, inicia. Depois, segue o ciclo normal.
+- **Recuperação no boot:** se existir rodada `RUNNING` com `crashAt` no passado, finaliza e liquida. Se existir rodada `BETTING` vencida, inicia. Depois, segue o ciclo normal. É o primeiro `step()` do loop, sem caminho à parte (D61).
+- `start()` e `crash()` com a liquidação carregam a rodada com `FOR UPDATE` e esperam as apostas e os cash outs em andamento (D57).
 - Os tempos (10 s de apostas, 100 ms entre ticks, 3 s de pausa) ficam em configuração.
 
 ---
@@ -457,8 +472,8 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 ### M3 — API e tempo real (6 h)
 - [ ] Guest e autenticação por token
 - [ ] Endpoints REST da seção 8.1
-- [ ] Middleware de idempotência
-- [ ] `GameLoopService` com recuperação no boot
+- [ ] Idempotência: validação do header no HTTP, registro na transação e migration do `request_hash`, com teste do 422 `IDEMPOTENCY_KEY_REUSED` para outro corpo (D60)
+- [ ] `GameLoopService` com recuperação no boot; `msUntilCrash` incluído no teste da D47, permitido só no game loop (D61)
 - [ ] Gateway WS com os eventos da seção 8.2
 - [ ] Testes de concorrência e E2E
 
@@ -484,6 +499,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [ ] README: GIF de 10 s, arquitetura, decisões (link para esta seção 4), fluxos críticos, como rodar, limitações
 - [ ] Diagramas: contexto e fluxo de uma rodada
 - [ ] Medições de performance da seção 11.3, com antes e depois de pelo menos uma otimização
+- [ ] Api no Docker Compose (Dockerfile da api), como prevê a seção 3
 - [ ] Deploy do web e da api
 
 ### Definição de pronto (para toda etapa)
