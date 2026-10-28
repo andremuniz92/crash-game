@@ -77,8 +77,8 @@ pnpm dev
 Builda o `shared` e sobe, em paralelo, o watch do `shared`, a API em `http://localhost:3000` e
 o front em `http://localhost:5173`.
 
-Limitação conhecida: a API não reinicia sozinha quando só o `shared` muda. Salve um arquivo da
-API ou reinicie o `pnpm dev`. O Vite recarrega normalmente.
+A API roda com `tsc --watch` e `node --watch` sobre o `dist`, então reinicia tanto quando muda o
+código dela quanto quando muda o `shared`. Ela conecta no banco no boot e lê o `.env` da raiz.
 
 ### Scripts da raiz
 
