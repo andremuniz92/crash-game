@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER } from '@nestjs/core';
 import { PlayersModule } from './players/players.module.js';
+import { RoundsModule } from './rounds/infrastructure/rounds.module.js';
 import { CoreModule } from './shared/infrastructure/core.module.js';
 import { AppConfigModule } from './shared/infrastructure/config/app-config.module.js';
 import { DatabaseModule } from './shared/infrastructure/database/database.module.js';
@@ -13,6 +14,7 @@ import { WalletModule } from './wallet/infrastructure/wallet.module.js';
     CoreModule,
     DatabaseModule,
     PlayersModule,
+    RoundsModule,
     WalletModule,
   ],
   providers: [
