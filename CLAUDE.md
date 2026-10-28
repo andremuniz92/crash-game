@@ -125,6 +125,7 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D65 | **`pnpm dev` da api:** `tsc --watch` e `node --watch --env-file-if-exists=../../.env dist/main.js` em paralelo (`pnpm run "/^dev:/"`); o `node --watch` também reinicia quando muda o `dist` do `@crash/shared` | O `nest start --watch` não vê mudanças no `shared`, e o M3 mexe nele o tempo todo. `tsx watch` não serve: o esbuild não gera `emitDecoratorMetadata` |
 | D66 | **E2E** (`*.e2e-spec.ts`, `test:e2e`) usam o mesmo `globalSetup` e o mesmo `TRUNCATE` da integração, com arquivos em sequência, e rodam no job `integration` do CI. O cliente WS dos testes é o `WebSocket` global do Node, sem `ws` nem `@types/ws` | Mesmo banco de teste (D39, D40); nenhuma dependência nova |
 | D67 | **Consultas de leitura podem cruzar contextos.** A restrição da D48 (cada contexto só consulta e grava as próprias tabelas) vale para os **repositórios**, que carregam agregados e gravam. As consultas de leitura da D63 (`*Queries` em `infrastructure/`) podem fazer join com tabelas de outros contextos, como `BetQueries.betsOf` com `players` para trazer o nickname, desde que não alterem nada e devolvam DTOs, nunca agregados | Leitura não muda estado, então não ameaça as invariantes que a separação dos contextos protege. O join evita uma consulta extra por tela só para buscar nicknames |
+| D68 | **Detalhes do WebSocket:** (1) o `round:tick` leva `multiplierAt(now − startedAt)` do `@crash/shared`, calculado a partir do `startedAt` do evento e do `Clock`, **sem teto no crash point**; os ticks começam no `RoundStarted` e param no `RoundCrashed`. (2) O broadcast processa os eventos numa fila única, na ordem em que foram publicados, mesmo com a consulta assíncrona do nickname. (3) Mensagens enviadas pelo cliente são ignoradas (canal só de leitura, seção 8.2) | (1) O teto exigiria conhecer o crash point (D30); sem ele, o tick só depende do evento e do relógio. Um tick acima do crash point, se o loop atrasar o crash, não revela nada, porque cash out depois de `crashAt` já é `TOO_LATE`. (2) Sem a fila, um `bet:placed` esperando o nickname poderia sair depois do `round:started` seguinte. (3) O cliente não age pelo WS (D4) |
 
 ### Decisões pendentes
 
@@ -476,8 +477,8 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [x] Endpoints REST da seção 8.1; id malformado na URL (`verify`, `cashout`) responde 400 `VALIDATION_ERROR`, com teste E2E (D58)
 - [x] Idempotência: validação do header no HTTP, registro na transação e migration do `request_hash`, com teste do 422 `IDEMPOTENCY_KEY_REUSED` para outro corpo (D60)
 - [x] `GameLoopService` com recuperação no boot; `msUntilCrash` incluído no teste da D47, permitido só no game loop (D61)
-- [ ] Gateway WS com os eventos da seção 8.2
-- [ ] Testes de concorrência e E2E
+- [x] Gateway WS com os eventos da seção 8.2
+- [x] Testes de concorrência e E2E
 
 ### M4 — Base do front (5 h)
 - [ ] Vite + React + TypeScript consumindo `shared`
@@ -493,6 +494,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [ ] Texto do multiplicador
 - [ ] Animação do crash
 - [ ] Escala responsiva
+- [ ] Ao receber `round:crashed`, a cena corrige o multiplicador exibido para o crash point exato: o tick (D68) e o cálculo local (D11) podem passar um pouco dele
 
 ### M6 — Polimento (4 h)
 - [ ] Partículas no crash e no cash out
