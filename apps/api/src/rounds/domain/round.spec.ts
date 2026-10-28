@@ -4,12 +4,14 @@ import { Multiplier } from '../../shared/domain/multiplier.js';
 import { InvalidRoundIdError } from './crash-point.js';
 import {
   BettingWindowOpenError,
+  CorruptedRoundError,
   CrashBeforeCrashAtError,
   InvalidRoundTransitionError,
   Round,
   RoundNotRunningError,
   SecretNotRevealedError,
 } from './round.js';
+import { SeedHash } from './seed-hash.js';
 import { ServerSeed } from './server-seed.js';
 
 /* Vetores da Fase 2 (crash-point.spec.ts), calculados fora do projeto. */
@@ -279,5 +281,130 @@ describe('Round', () => {
         expect(act).toThrow(expect.objectContaining({ code }));
       }
     });
+  });
+});
+
+describe('Round: snapshot e restore', () => {
+  const CRASH_AT = STARTED_AT + LOW.timeToCrash;
+
+  function roundTrip(round: Round): Round {
+    return Round.restore(round.toSnapshot());
+  }
+
+  it('toSnapshot tem os campos certos em cada estado', () => {
+    const betting = newRound().toSnapshot();
+    expect(betting).toMatchObject({
+      id: LOW.roundId,
+      status: 'BETTING',
+      bettingEndsAt: BETTING_ENDS_AT,
+      startedAt: null,
+      crashAt: null,
+      crashedAt: null,
+    });
+    expect(betting.serverSeed.toHex()).toBe(LOW.seed);
+    expect(betting.seedHash.toHex()).toBe(
+      ServerSeed.fromHex(LOW.seed).hash().toHex(),
+    );
+    expect(betting.crashPoint.x100).toBe(LOW.crashPoint);
+
+    expect(runningRound().toSnapshot()).toMatchObject({
+      status: 'RUNNING',
+      startedAt: STARTED_AT,
+      crashAt: CRASH_AT,
+      crashedAt: null,
+    });
+    expect(crashedRound().toSnapshot()).toMatchObject({
+      status: 'CRASHED',
+      startedAt: STARTED_AT,
+      crashAt: CRASH_AT,
+      crashedAt: CRASH_AT,
+    });
+  });
+
+  it('restore(toSnapshot()) se comporta igual à original e não registra eventos', () => {
+    const betting = roundTrip(newRound());
+    expect(betting.status).toBe('BETTING');
+    expect(betting.acceptsBetsAt(BETTING_ENDS_AT - 1)).toBe(true);
+    expect(betting.pullEvents()).toEqual([]);
+
+    const running = roundTrip(runningRound());
+    expect(running.status).toBe('RUNNING');
+    expect(running.startedAt).toBe(STARTED_AT);
+    expect(running.acceptsCashOutAt(CRASH_AT - 1)).toBe(true);
+    expect(running.acceptsCashOutAt(CRASH_AT)).toBe(false);
+    expect(running.multiplierAt(STARTED_AT + 1_000).x100).toBe(
+      sharedMultiplierAt(1_000),
+    );
+    expect(running.pullEvents()).toEqual([]);
+
+    const crashed = roundTrip(crashedRound());
+    expect(crashed.status).toBe('CRASHED');
+    expect(crashed.crashedAt).toBe(CRASH_AT);
+    expect(crashed.revealCrashPoint().x100).toBe(LOW.crashPoint);
+    expect(crashed.revealServerSeed().toHex()).toBe(LOW.seed);
+    expect(crashed.pullEvents()).toEqual([]);
+  });
+
+  it('o ciclo continua depois do restore', () => {
+    const betting = roundTrip(newRound());
+    betting.start(STARTED_AT);
+    expect(betting.status).toBe('RUNNING');
+
+    const running = roundTrip(runningRound());
+    running.crash(CRASH_AT);
+    expect(running.status).toBe('CRASHED');
+    expect(running.pullEvents().map((event) => event.type)).toEqual([
+      'RoundCrashed',
+    ]);
+  });
+
+  it('lança CorruptedRoundError se o seedHash não bate com a seed', () => {
+    const snapshot = newRound().toSnapshot();
+    expect(() =>
+      Round.restore({
+        ...snapshot,
+        seedHash: SeedHash.fromHex('0'.repeat(64)),
+      }),
+    ).toThrow(CorruptedRoundError);
+  });
+
+  it('lança CorruptedRoundError se o crashPoint não bate com a seed e o id', () => {
+    const snapshot = newRound().toSnapshot();
+    expect(() =>
+      Round.restore({
+        ...snapshot,
+        crashPoint: Multiplier.fromX100(LOW.crashPoint + 1),
+      }),
+    ).toThrow(CorruptedRoundError);
+  });
+
+  it('lança CorruptedRoundError se crashAt ≠ startedAt + timeToCrash(crashPoint)', () => {
+    const snapshot = runningRound().toSnapshot();
+    expect(() => Round.restore({ ...snapshot, crashAt: CRASH_AT + 1 })).toThrow(
+      CorruptedRoundError,
+    );
+  });
+
+  it('lança CorruptedRoundError se os campos não combinam com o status', () => {
+    const betting = newRound().toSnapshot();
+    const running = runningRound().toSnapshot();
+    const crashed = crashedRound().toSnapshot();
+    const inconsistent = [
+      { ...betting, startedAt: STARTED_AT, crashAt: CRASH_AT },
+      { ...running, crashAt: null },
+      { ...running, startedAt: null, crashAt: null },
+      { ...running, crashedAt: CRASH_AT },
+      { ...crashed, crashedAt: null },
+    ];
+    for (const snapshot of inconsistent) {
+      expect(() => Round.restore(snapshot)).toThrow(CorruptedRoundError);
+    }
+  });
+
+  it('o erro carrega o code CORRUPTED_ROUND', () => {
+    const snapshot = runningRound().toSnapshot();
+    expect(() => Round.restore({ ...snapshot, crashAt: null })).toThrow(
+      expect.objectContaining({ code: 'CORRUPTED_ROUND' }),
+    );
   });
 });

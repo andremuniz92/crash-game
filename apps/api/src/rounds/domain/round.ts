@@ -27,7 +27,23 @@ export class SecretNotRevealedError extends DomainError {
   readonly code = 'SECRET_NOT_REVEALED';
 }
 
+export class CorruptedRoundError extends DomainError {
+  readonly code = 'CORRUPTED_ROUND';
+}
+
 export type RoundStatus = 'BETTING' | 'RUNNING' | 'CRASHED';
+
+export interface RoundSnapshot {
+  id: string;
+  status: RoundStatus;
+  serverSeed: ServerSeed;
+  seedHash: SeedHash;
+  crashPoint: Multiplier;
+  bettingEndsAt: number;
+  startedAt: number | null;
+  crashAt: number | null;
+  crashedAt: number | null;
+}
 
 /**
  * Rodada global (seção 6.2): BETTING → RUNNING → CRASHED.
@@ -68,6 +84,60 @@ export class Round extends AggregateRoot<RoundEvent> {
       bettingEndsAt: round.bettingEndsAt,
     });
     return round;
+  }
+
+  /**
+   * Reconstrói a rodada a partir do banco (D41), sem registrar eventos.
+   * Recalcula seedHash, crash point e crashAt e lança `CorruptedRoundError`
+   * se o snapshot divergir.
+   */
+  static restore(snapshot: RoundSnapshot): Round {
+    const round = new Round(
+      snapshot.id,
+      snapshot.serverSeed,
+      snapshot.bettingEndsAt,
+    );
+    const corrupted = (reason: string) =>
+      new CorruptedRoundError(`rodada ${snapshot.id}: ${reason}`);
+
+    if (!round.seedHash.equals(snapshot.seedHash)) {
+      throw corrupted('seedHash não corresponde à seed');
+    }
+    if (!round.#crashPoint.equals(snapshot.crashPoint)) {
+      throw corrupted('crashPoint não corresponde à seed e ao id');
+    }
+
+    const { status, startedAt, crashAt, crashedAt } = snapshot;
+    if (!timesMatchStatus(snapshot)) {
+      throw corrupted(`campos de tempo incompatíveis com o status ${status}`);
+    }
+    if (
+      startedAt !== null &&
+      crashAt !== startedAt + timeToCrash(round.#crashPoint.x100)
+    ) {
+      throw corrupted('crashAt não corresponde a startedAt + timeToCrash');
+    }
+
+    round._status = status;
+    round._startedAt = startedAt;
+    round.#crashAt = crashAt;
+    round._crashedAt = crashedAt;
+    return round;
+  }
+
+  /** Inclui os segredos: só para os mapeadores de persistência (D30, D41). */
+  toSnapshot(): RoundSnapshot {
+    return {
+      id: this.id,
+      status: this._status,
+      serverSeed: this.#serverSeed,
+      seedHash: this.seedHash,
+      crashPoint: this.#crashPoint,
+      bettingEndsAt: this.bettingEndsAt,
+      startedAt: this._startedAt,
+      crashAt: this.#crashAt,
+      crashedAt: this._crashedAt,
+    };
   }
 
   get status(): RoundStatus {
@@ -164,5 +234,22 @@ export class Round extends AggregateRoot<RoundEvent> {
       throw new RoundNotRunningError('a rodada ainda não começou');
     }
     return this.#crashAt;
+  }
+}
+
+/** Quais instantes cada status exige: BETTING nenhum, RUNNING início e crashAt, CRASHED todos. */
+function timesMatchStatus(snapshot: RoundSnapshot): boolean {
+  const started = snapshot.startedAt !== null && snapshot.crashAt !== null;
+  switch (snapshot.status) {
+    case 'BETTING':
+      return (
+        snapshot.startedAt === null &&
+        snapshot.crashAt === null &&
+        snapshot.crashedAt === null
+      );
+    case 'RUNNING':
+      return started && snapshot.crashedAt === null;
+    case 'CRASHED':
+      return started && snapshot.crashedAt !== null;
   }
 }
