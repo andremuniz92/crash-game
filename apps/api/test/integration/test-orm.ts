@@ -4,6 +4,9 @@ import { ormOptions } from '../../src/shared/infrastructure/database/orm-options
 
 const MIGRATIONS_TABLE = 'mikro_orm_migrations';
 
+/** O ORM dos testes, para os specs de domain/ e application/ não importarem o MikroORM (D55). */
+export type TestOrm = MikroORM;
+
 /** ORM apontando para o banco de teste; `readTestDatabaseConfig` garante o sufixo _test (D40). */
 export function initTestOrm(
   options: { createDatabase?: boolean } = {},

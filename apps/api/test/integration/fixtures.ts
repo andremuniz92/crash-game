@@ -27,12 +27,12 @@ export function deferred<T = void>(): Deferred<T> {
 }
 
 /**
- * Espera até o Postgres ter uma transação parada esperando um lock (D54).
- * Consulta o próprio banco em vez de dormir um tempo fixo.
+ * Espera até o Postgres ter `count` esperas de lock (D54). Consulta o
+ * próprio banco em vez de dormir um tempo fixo.
  */
 export async function waitForBlockedLock(
   orm: MikroORM,
-  timeoutMs = 2_000,
+  { count = 1, timeoutMs = 2_000 }: { count?: number; timeoutMs?: number } = {},
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -43,10 +43,14 @@ export async function waitForBlockedLock(
            from pg_locks l join pg_stat_activity a on a.pid = l.pid
           where not l.granted and a.datname = current_database()`,
     );
-    if ((row?.n ?? 0) > 0) return;
+    if ((row?.n ?? 0) >= count) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  throw new Error('nenhuma transação ficou esperando lock');
+  throw new Error(
+    count === 1
+      ? 'nenhuma transação ficou esperando lock'
+      : `menos de ${count} transações ficaram esperando lock`,
+  );
 }
 
 /**
