@@ -1,4 +1,10 @@
+import { DomainError } from '../../shared/domain/domain-error.js';
 import type { Bet } from './bet.js';
+
+/** Segunda aposta do jogador na mesma rodada, barrada pelo banco (D33, D52). */
+export class BetAlreadyPlacedError extends DomainError {
+  readonly code = 'BET_ALREADY_PLACED';
+}
 
 /** Persistência das apostas (D38). Implementação no M2. */
 export interface BetRepository {
