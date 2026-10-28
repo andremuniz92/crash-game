@@ -102,6 +102,13 @@ export class GameLoopStep {
     id: string,
     now: number,
   ): Promise<Outcome> {
+    // Não remova este lock por parecer redundante. Hoje o UPDATE do save logo
+    // abaixo também espera o FOR SHARE dos cash outs, e por isso o teste C1
+    // continua verde sem o getForUpdate (mutação (a) da Fase 2a). Mas essa
+    // proteção depende da ordem: se a liquidação vier antes do save, o crash
+    // lê a aposta ainda PENDING e grava LOST por cima do cash out (mutação (b),
+    // que o C1 pega). O FOR UPDATE espera antes de qualquer leitura e tira essa
+    // dependência: é uma segunda barreira que os testes não detectam.
     const round = await tx.rounds.getForUpdate(id);
     round.crash(now);
     await tx.rounds.save(round);
