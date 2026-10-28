@@ -82,5 +82,8 @@ jobs:
       - name: Testes de integração
         run: pnpm --filter @crash/api test:int
 
+      - name: Testes E2E
+        run: pnpm --filter @crash/api test:e2e
+
       - name: Migrations em dia com os registros
         run: pnpm --filter @crash/api migration:check
