@@ -85,6 +85,9 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D26 | `BetsSettled` é **evento de domínio**; `RoundSettled` (seção 14) será o **evento de integração** publicado no SNS. Os nomes não são unificados | Evento de domínio é interno e pode mudar com o modelo; evento de integração é contrato público entre sistemas e tem o próprio formato |
 | D27 | Fórmula do crash point com **divisão inteira exata** (`BigInt`), não em ponto flutuante | `100 × 2^52` passa de `2^53`: em `number` a conta perde bits e diverge da divisão exata em alguns casos (observado acima do teto). A divisão exata deixa a fórmula publicada sem ambiguidade para quem verifica |
 | D28 | **Erros de domínio** herdam de `DomainError`, que carrega um `code` legível (ex.: `INVALID_MONEY`); uma subclasse por regra violada. A camada HTTP (M3) converte o `code` em status | O domínio não conhece HTTP, mas cada erro é identificável sem comparar mensagens |
+| D29 | **Agregados recebem `now: number`**, não o `Clock`. A interface `Clock` fica em `shared/domain/`; a aplicação lê o relógio uma vez por operação e repassa o instante | Todas as regras de uma operação usam o mesmo instante. No cash out, `now < crashAt` e o multiplicador são calculados sobre o mesmo `now`; duas leituras do relógio poderiam discordar na fronteira do crash |
+| D30 | **`crashPoint` e `crashAt` são secretos como a `serverSeed`** até o crash: sem getter público no `Round`, fora dos eventos `RoundCreated` e `RoundStarted` e fora do `GET /rounds/current`. As regras usam `acceptsCashOutAt(now)`; os valores só saem por `revealCrashPoint()` depois do crash | Quem sabe `crashAt` sabe o crash point (`crashAt − startedAt = timeToCrash(crashPoint)`) e poderia sacar 1 ms antes |
+| D31 | **Eventos de domínio** são objetos simples, tipados como union discriminada por `type`. Os agregados herdam de `AggregateRoot` (`shared/domain/`), que acumula os eventos; `pullEvents()` devolve e esvazia a lista | Eventos serializáveis e fáceis de comparar em teste; a infraestrutura publica o que o agregado acumulou depois do commit |
 
 ### Decisões pendentes
 
@@ -139,7 +142,7 @@ infrastructure → application → domain
 
 ### Relógio injetável
 
-Toda regra que depende de tempo recebe um `Clock` (`now(): number` em ms). Nos testes, use um relógio falso controlável. Nunca chame `Date.now()` dentro do domínio.
+A interface `Clock` (`now(): number` em ms) fica em `shared/domain/`. A camada de aplicação lê o relógio **uma vez por operação** e repassa o instante aos agregados como `now: number` (D29). Nos testes, use o `FakeClock` de `shared/testing/`. Nunca chame `Date.now()` dentro do domínio.
 
 ---
 
@@ -176,7 +179,8 @@ BETTING ──start()──▶ RUNNING ──crash()──▶ CRASHED
 
 Invariantes:
 - Só sai de `BETTING` para `RUNNING`, e de `RUNNING` para `CRASHED`. Qualquer outra transição lança `InvalidRoundTransitionError`.
-- `serverSeed` só é exposto quando `status === CRASHED`.
+- `serverSeed`, `crashPoint` e `crashAt` só são expostos quando `status === CRASHED` (D30). Antes disso, nenhum getter, evento ou resposta HTTP os revela; as regras que dependem deles são métodos do próprio `Round` (`acceptsBetsAt(now)`, `acceptsCashOutAt(now)`).
+- `start(now)` exige `now ≥ bettingEndsAt` (senão `BettingWindowOpenError`); `crash(now)` exige `now ≥ crashAt` (senão `CrashBeforeCrashAtError`). Na recuperação no boot, `now` pode estar bem depois do prazo: `startedAt` e `crashedAt` recebem esse `now`.
 - `multiplierAt(now)` só é definido em `RUNNING` e nunca passa de `crashPoint`: vale `min(multiplierAt(now − startedAt), crashPoint)`. O `min` é necessário porque, acima de ~100x, o multiplicador sobe vários centésimos por milissegundo.
 
 ### 6.3 Agregado `Bet`
@@ -207,6 +211,8 @@ Invariantes:
 ### 6.5 Eventos de domínio
 
 `RoundCreated`, `RoundStarted`, `RoundCrashed`, `BetPlaced`, `BetCashedOut`, `BetsSettled`.
+
+Payloads dos eventos da rodada (D31): `RoundCreated { roundId, seedHash, bettingEndsAt }`, `RoundStarted { roundId, startedAt }` e `RoundCrashed { roundId, crashPoint, serverSeed, crashedAt }`. Nenhum evento anterior ao crash carrega `crashPoint`, `crashAt` ou `serverSeed` (D30).
 
 Na infraestrutura, o gateway WS escuta esses eventos e faz o broadcast correspondente (seção 8.2).
 
@@ -266,7 +272,7 @@ Ações que mexem com saldo exigem o header `Idempotency-Key: <uuid>`.
 |---|---|---|---|
 | `POST /players/guest` | `{ nickname }` (3 a 16 caracteres) | `{ playerId, nickname, token, balance }` | 400 |
 | `GET /wallet` | — | `{ balance, entries[] }` (últimos 20 lançamentos) | 401 |
-| `GET /rounds/current` | — | estado atual da rodada, apostas da rodada e `serverTime` | — |
+| `GET /rounds/current` | — | estado atual da rodada, apostas da rodada e `serverTime`; nunca inclui `crashPoint`, `crashAt` nem `serverSeed` antes do crash (D30) | — |
 | `GET /rounds/history?limit=20` | — | `[{ id, crashPoint, crashedAt }]` | — |
 | `GET /rounds/:id/verify` | — | `{ serverSeed, seedHash, crashPoint }` | 404; 409 se a rodada ainda não crashou |
 | `POST /bets` | `{ amount }` | `{ betId, roundId, amount, balance }` | 400, 401, 409 (`ROUND_NOT_ACCEPTING_BETS`, `BET_ALREADY_PLACED`), 422 (`INSUFFICIENT_BALANCE`) |
