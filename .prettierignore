@@ -5,3 +5,5 @@ pnpm-lock.yaml
 CLAUDE.md
 # Infra do agente; mantida pelo André fora do fluxo de formatação
 .ai-jail/
+# Gerado e reescrito inteiro pelo MikroORM a cada migration:create (D49)
+apps/api/src/migrations/.snapshot.json
