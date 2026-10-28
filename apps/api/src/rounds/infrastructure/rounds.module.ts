@@ -1,4 +1,7 @@
+import { MikroORM } from '@mikro-orm/postgresql';
 import { type BeforeApplicationShutdown, Inject, Module } from '@nestjs/common';
+import { BetsModule } from '../../bets/infrastructure/bets.module.js';
+import { PlayersModule } from '../../players/players.module.js';
 import type { EventPublisher } from '../../shared/application/event-publisher.js';
 import type { IdGenerator } from '../../shared/application/id-generator.js';
 import type { Clock } from '../../shared/domain/clock.js';
@@ -17,10 +20,19 @@ import { GameLoopStep } from '../application/game-loop-step.js';
 import type { SeedGenerator } from '../application/seed-generator.js';
 import { GameLoop } from './game-loop.js';
 import { RandomSeedGenerator } from './random-seed-generator.js';
+import { RoundQueries } from './round-queries.js';
+import { RoundsController } from './rounds.controller.js';
 import { SEED_GENERATOR } from './seed-generator.token.js';
 
 @Module({
+  imports: [PlayersModule, BetsModule],
+  controllers: [RoundsController],
   providers: [
+    {
+      provide: RoundQueries,
+      useFactory: (orm: MikroORM) => new RoundQueries(orm),
+      inject: [MikroORM],
+    },
     { provide: SEED_GENERATOR, useValue: new RandomSeedGenerator() },
     {
       provide: GameLoopStep,
