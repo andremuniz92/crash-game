@@ -1,7 +1,10 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "rootDir": "./src"
+    "rootDir": "./src",
+    // Estado incremental dentro da dist: apagar a dist apaga junto, e o tsc
+    // nunca conclui que está "em dia" sem ter gerado nada (D65).
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
   },
   "include": ["src"],
   "exclude": [
