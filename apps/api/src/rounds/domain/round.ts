@@ -190,6 +190,17 @@ export class Round extends AggregateRoot<RoundEvent> {
     return Multiplier.fromX100(Math.min(x100, this.#crashPoint.x100));
   }
 
+  /**
+   * Quanto falta para o crash, para o game loop agendá-lo (D61). Revela
+   * crashAt a quem chama (D30): só o game loop pode chamar (teste da D47).
+   */
+  msUntilCrash(now: number): number {
+    if (this._status !== 'RUNNING') {
+      throw new RoundNotRunningError('a rodada não está em andamento');
+    }
+    return Math.max(this.crashAt() - now, 0);
+  }
+
   acceptsBetsAt(now: number): boolean {
     return this._status === 'BETTING' && now < this.bettingEndsAt;
   }

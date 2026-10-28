@@ -408,3 +408,33 @@ describe('Round: snapshot e restore', () => {
     );
   });
 });
+
+describe('Round.msUntilCrash (D61)', () => {
+  it('R1: em RUNNING, devolve crashAt − now', () => {
+    const round = runningRound(HIGH);
+    expect(round.msUntilCrash(STARTED_AT)).toBe(HIGH.timeToCrash);
+    expect(round.msUntilCrash(STARTED_AT + 1_000)).toBe(
+      HIGH.timeToCrash - 1_000,
+    );
+    expect(round.msUntilCrash(STARTED_AT + HIGH.timeToCrash - 1)).toBe(1);
+  });
+
+  it('R2: em crashAt e depois dele, devolve 0', () => {
+    const round = runningRound(LOW);
+    expect(round.msUntilCrash(STARTED_AT + LOW.timeToCrash)).toBe(0);
+    expect(round.msUntilCrash(STARTED_AT + LOW.timeToCrash + 60_000)).toBe(0);
+  });
+
+  it('R3: em BETTING e em CRASHED, lança RoundNotRunningError', () => {
+    expect(() => newRound().msUntilCrash(BETTING_ENDS_AT)).toThrow(
+      RoundNotRunningError,
+    );
+    expect(() =>
+      crashedRound().msUntilCrash(STARTED_AT + LOW.timeToCrash),
+    ).toThrow(RoundNotRunningError);
+  });
+
+  it('R4: no crash point 1,00x, devolve 0 logo depois do start', () => {
+    expect(runningRound(INSTANT).msUntilCrash(STARTED_AT)).toBe(0);
+  });
+});
