@@ -4,7 +4,7 @@ import type { Clock } from '../shared/domain/clock.js';
 import { UNIT_OF_WORK } from '../shared/infrastructure/database/database.module.js';
 import type { MikroOrmUnitOfWork } from '../shared/infrastructure/database/mikro-orm-unit-of-work.js';
 import { CLOCK, ID_GENERATOR } from '../shared/infrastructure/tokens.js';
-import { AuthGuard } from './auth.guard.js';
+import { AuthGuard, OptionalAuthGuard } from './auth.guard.js';
 import { CreateGuest } from './create-guest.js';
 import { PlayersController } from './players.controller.js';
 
@@ -12,6 +12,7 @@ import { PlayersController } from './players.controller.js';
   controllers: [PlayersController],
   providers: [
     AuthGuard,
+    OptionalAuthGuard,
     {
       provide: CreateGuest,
       useFactory: (uow: MikroOrmUnitOfWork, clock: Clock, ids: IdGenerator) =>
@@ -19,6 +20,6 @@ import { PlayersController } from './players.controller.js';
       inject: [UNIT_OF_WORK, CLOCK, ID_GENERATOR],
     },
   ],
-  exports: [AuthGuard],
+  exports: [AuthGuard, OptionalAuthGuard],
 })
 export class PlayersModule {}
