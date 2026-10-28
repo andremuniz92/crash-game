@@ -120,12 +120,28 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D60 | **Idempotência na transação do caso de uso**, sem middleware do Nest. O HTTP valida o header (ausente → 400 `IDEMPOTENCY_KEY_REQUIRED`; não UUID → 400 `INVALID_IDEMPOTENCY_KEY`). Na transação, um `pg_advisory_xact_lock` por (jogador, chave) serializa as requisições com a mesma chave; a resposta salva é devolvida se `endpoint` (com o id real, ex.: `POST /bets/<id>/cashout`) e `request_hash` coincidirem, e qualquer diferença responde 422 `IDEMPOTENCY_KEY_REUSED`. `request_hash` é o SHA-256 hex do JSON canônico (chaves ordenadas) da entrada já validada, numa migration nova (`varchar(64) not null`; a tabela ainda não tem escritor). Só respostas de sucesso são salvas; erro faz rollback e pode ser repetido. Replay não publica eventos | Dinheiro: a mesma chave com outro valor não pode devolver a resposta de outra operação. O advisory lock dispensa linha "em andamento" no schema |
 | D61 | **Game loop como `step()`:** lê o estado do banco e o `now`, executa a ação devida (criar, iniciar, crashar e liquidar) e devolve a espera até a próxima. A recuperação no boot (10.3) é o primeiro `step()`, não um caminho à parte. O crash é agendado por `Round.msUntilCrash(now)` (só em `RUNNING`); como `toSnapshot()`, a chamada só é permitida no game loop, verificada pelo teste da D47. Ticks saem da rodada em memória. Falha no `step()` vai para o log e tenta de novo em 1 s. O loop é ligado no `main.ts`, então os testes sobem a app sem ele e chamam `step()` com `FakeClock` e `SeedGenerator` fixo | Recuperação testada com banco real e `FakeClock`, sem timers. `msUntilCrash` revela `crashAt` a quem o chama (D30) |
 | D62 | **Eventos para o WS:** porta `EventPublisher` com implementação em memória, sem `@nestjs/event-emitter`. Os casos de uso publicam os eventos de domínio depois do commit. O gateway (`/ws`, `WsAdapter`) traduz para a seção 8.2; o `nickname` vem de um cache em memória id → nickname, preenchido por consulta no primeiro uso. Heartbeat: ping a cada `WS_HEARTBEAT_MS`, quem não responder é derrubado (D15) | Evento de rollback nunca chega ao cliente. O nickname não muda, então o cache não invalida |
-| D63 | **Leituras e contrato:** `GET /rounds/current` é montado a partir do agregado (sem getter de segredo) num DTO sem campos para os segredos; sem rodada aberta, devolve a última crashada, já revelada; com `Bearer` opcional, inclui `myBet`. Histórico e extrato são consultas diretas na infraestrutura; o histórico filtra `status = 'CRASHED'`. DTOs e eventos WS ficam no `@crash/shared`. Instantes trafegam em ms desde a epoch. `POST /bets` responde 201 e o cash out, 200 | O tipo impede vazar segredo. O cliente que reconecta precisa do `betId` para sacar |
+| D63 | **Leituras e contrato:** `GET /rounds/current` é montado a partir do agregado (sem getter de segredo) num DTO sem campos para os segredos; sem rodada aberta, devolve a última crashada, já revelada; com `Bearer` opcional, inclui `myBet`. Histórico e extrato são consultas diretas na infraestrutura; o histórico filtra `status = 'CRASHED'`. DTOs e eventos WS ficam no `@crash/shared`. Instantes trafegam em ms desde a epoch. `POST /bets` responde 201 e o cash out, 200. *(Revisada pela D71: as apostas de `GET /rounds/current` e os eventos de aposta levam `betId`; o `playerId` continua fora.)* | O tipo impede vazar segredo. O cliente que reconecta precisa do `betId` para sacar |
 | D64 | **Configuração sem `@nestjs/config`** (reavaliação da D43): a função pura `readAppConfig(env)` lê e valida `PORT`, `DATABASE_URL`, `BETTING_MS`, `TICK_MS`, `PAUSE_MS` e `WS_HEARTBEAT_MS`, com padrões para os tempos, e é fornecida ao Nest por um token | Seis variáveis tipadas e testadas; o `@nestjs/config` traria `dotenv` e um `get<string>()` sem tipo, e a validação seria escrita do mesmo jeito |
 | D65 | **`pnpm dev` da api:** `tsc --watch` e `node --watch --env-file-if-exists=../../.env dist/main.js` em paralelo (`pnpm run "/^dev:/"`); o `node --watch` também reinicia quando muda o `dist` do `@crash/shared`. O `tsBuildInfoFile` do `tsconfig.build.json` fica dentro da `dist`: apagar a `dist` apaga o estado incremental junto | O `nest start --watch` não vê mudanças no `shared`, e o M3 mexe nele o tempo todo. `tsx watch` não serve: o esbuild não gera `emitDecoratorMetadata`; com o `.tsbuildinfo` fora da `dist`, um clone sem `dist` (ou uma `dist` apagada) fazia o `tsc` incremental se dar por em dia sem gerar nada |
 | D66 | **E2E** (`*.e2e-spec.ts`, `test:e2e`) usam o mesmo `globalSetup` e o mesmo `TRUNCATE` da integração, com arquivos em sequência, e rodam no job `integration` do CI. O cliente WS dos testes é o `WebSocket` global do Node, sem `ws` nem `@types/ws` | Mesmo banco de teste (D39, D40); nenhuma dependência nova |
 | D67 | **Consultas de leitura podem cruzar contextos.** A restrição da D48 (cada contexto só consulta e grava as próprias tabelas) vale para os **repositórios**, que carregam agregados e gravam. As consultas de leitura da D63 (`*Queries` em `infrastructure/`) podem fazer join com tabelas de outros contextos, como `BetQueries.betsOf` com `players` para trazer o nickname, desde que não alterem nada e devolvam DTOs, nunca agregados | Leitura não muda estado, então não ameaça as invariantes que a separação dos contextos protege. O join evita uma consulta extra por tela só para buscar nicknames |
 | D68 | **Detalhes do WebSocket:** (1) o `round:tick` leva `multiplierAt(now − startedAt)` do `@crash/shared`, calculado a partir do `startedAt` do evento e do `Clock`, **sem teto no crash point**; os ticks começam no `RoundStarted` e param no `RoundCrashed`. (2) O broadcast processa os eventos numa fila única, na ordem em que foram publicados, mesmo com a consulta assíncrona do nickname. (3) Mensagens enviadas pelo cliente são ignoradas (canal só de leitura, seção 8.2) | (1) O teto exigiria conhecer o crash point (D30); sem ele, o tick só depende do evento e do relógio. Um tick acima do crash point, se o loop atrasar o crash, não revela nada, porque cash out depois de `crashAt` já é `TOO_LATE`. (2) Sem a fila, um `bet:placed` esperando o nickname poderia sair depois do `round:started` seguinte. (3) O cliente não age pelo WS (D4) |
+| D69 | **CORS restrito à origem do front.** `WEB_ORIGIN` é obrigatória no `readAppConfig`: ausente ou vazia, o boot falha. É validada como origem pura (`new URL(raw).origin === raw`, http ou https), recusando `*`, caminho, barra final, query, credenciais e lista; quando existe forma normalizada, a mensagem de erro a mostra (ex.: `HTTP://LOCALHOST:5173` → `http://localhost:5173`). `configureApp(app, config)` é usada pelo `main.ts` e pelo `createTestApp`. `enableCors` com `origin` em função (igualdade exata), `methods` GET e POST, `allowedHeaders` `Authorization`, `Content-Type` e `Idempotency-Key`, sem credentials. Só o boot do Nest lê `WEB_ORIGIN`: a CLI do MikroORM usa `readDatabaseConfig`, e os testes trocam o `APP_CONFIG` | Nunca `*`. A falha no boot explica o erro de deploy no log, em vez de um erro de CORS no navegador. Com `origin` em função, o pacote `cors` não escreve header nenhum para a origem recusada (com array, mandaria `Allow-Methods`). O E2E testa o mesmo código do boot. CORS protege o navegador; não é autenticação |
+| D70 | **Origem do WebSocket.** `OriginCheckedWsAdapter` (estende o `WsAdapter`) injeta `verifyClient` no servidor `ws`: origem diferente da `WEB_ORIGIN`, ou ausente, recebe 403 no handshake. O cliente de teste manda `Origin` (o `WebSocket` do Node aceita `headers`) | O decorator `@WebSocketGateway` é estático e não lê a configuração. Recusar no handshake evita abrir a conexão. Protege só contra páginas de outra origem no navegador (CSWSH); um cliente fora do navegador falsifica o header (seção 14) |
+| D71 | **`betId` público** em `bet:placed`, `bet:cashed_out` e nas apostas do `GET /rounds/current` (`RoundBetDto`); revisa a D63. O `playerId` continua fora dos eventos e do `RoundBetDto` | O nickname não é único (D59): sem id, o front não sabe qual aposta sacou nem deduplica o buffer da ressincronização (D76). O `betId` não dá poder a ninguém: o cash out exige `Bearer` e posse (D33) |
+| D72 | **Regras do nickname no `@crash/shared`:** `NICKNAME_PATTERN` e `parseNickname(raw): string \| null` (apara e valida; regex sem flag `g`). O `parseGuestBody` da api e o formulário do front usam a mesma função | Uma fonte só, como os limites de aposta (D36). Sem `g`, o `test` não guarda `lastIndex` entre chamadas |
+| D73 | **Configuração do front:** a função pura `readWebConfig(env)` lê `VITE_API_URL` do `.env` da raiz (`envDir`); a URL do WS é derivada (`http→ws`, `https→wss`, mais `/ws`); o padrão `http://localhost:3000` vale só em dev, e o build de produção falha sem a variável. Sem proxy do Vite | Uma variável só. Sem proxy, o dev é de origem cruzada como a produção (Netlify → Railway/Render), e o CORS da D69 é exercitado todo dia |
+| D74 | **Relógio do cliente:** base local `performance.now()`, monotônica; `serverNow() = performance.now() + offset`. Cada mensagem do WS e cada resposta do `GET /rounds/current` gera a amostra `serverTime − recebidoEm`; o offset é o **máximo** das amostras dos últimos 10 s e, com a janela vazia, fica a última estimativa. A janela é zerada a cada ressincronização e recomeça pela amostra do snapshot; as amostras das mensagens do buffer entram depois dela. O `payload.multiplier` do tick não é usado | O `serverTime` é lido no envio (seção 8.2), então toda amostra é `offset real − latência de ida`, um limite inferior: a melhor é a de menor latência, e uma amostra atrasada não puxa a estimativa (a média puxaria). Viés: o multiplicador exibido fica atrás pela menor latência de ida, o lado conservador. O `Date.now()` salta com ajustes do relógio do sistema; o `performance.now()` não salta, mas pode parar na suspensão do aparelho, por isso a janela recomeça a cada ressincronização. O tick não tem teto (D68) |
+| D75 | **Store:** uma instância do Zustand `createStore` (vanilla), lida pelo React com `useStore(store, seletor)` e pelo Pixi com `subscribe` (D10). Redutores puros e idempotentes (`applySnapshot`, `applyMessage`); apostas indexadas por `betId`; mensagem de outra rodada é ignorada, exceto `round:betting`. O multiplicador nunca entra na store: quem desenha calcula `multiplierAt(serverNow() − startedAt)` a cada frame e, em `CRASHED`, mostra o `crashPoint` exato. O `myBet` só muda pela resposta REST do jogador, pelo snapshot (que o back identifica por `playerId`) ou por mensagem com o mesmo `betId`, nunca pelo nickname. Store, clientes e conexão são criados no `main.tsx`, fora do React | 60 atualizações por segundo na store re-renderizariam o React. Redutores idempotentes permitem reaplicar eventos depois do snapshot. Fora do React, o StrictMode não abre dois WebSockets |
+| D76 | **Conexão WS:** estados `connecting`, `syncing`, `live` e `waiting`. Um caminho só para a primeira conexão, a reconexão e a ressincronização depois de um 409 de estado: entra em `syncing`, chama `GET /rounds/current`, aplica o snapshot e reprocessa o buffer. Na `syncing`, as mensagens vão para um buffer; depois do snapshot, as de `serverTime < snapshot.serverTime` são descartadas, as outras aplicadas na ordem, e os ticks descartados. Cada conexão tem geração e `AbortController`: `dispose()` e fechamento abortam o GET, e um GET de geração antiga não aplica o snapshot. Timeout de 10 s no GET; falha → fecha e entra no backoff. Backoff full jitter, `random() × min(10 s, 500 ms × 2^tentativa)`, zerado depois de ressincronizar; o evento `online` reconecta na hora. Vigia de silêncio: 30 s sem mensagem (em `BETTING`, até `bettingEndsAt + 30 s`) fecha o socket; o prazo é conferido no disparo | Um caminho de recuperação, como a D61. O `serverTime` do GET é lido antes das consultas: evento publicado antes dele já está no snapshot, e sem o descarte um `round:betting` antigo faria a rodada regredir. O navegador não expõe ping/pong ao JS e pode não perceber conexão meio aberta; o maior silêncio legítimo com os padrões é 10 s. Conferir no disparo evita fechar cedo quando o navegador atrasa timers em aba de fundo. O jitter espalha as reconexões depois de uma queda da API |
+| D77 | **Sessão do guest no `localStorage`** (`crash.session`: `{ playerId, nickname, token }`). Um 401 apaga a sessão, volta ao formulário de guest e refaz o `GET /rounds/current` sem `Bearer` uma vez só, sem laço | Recarregar a página mantém a sessão e o `myBet` (D63). `sessionStorage` criaria um guest por aba; cookie HttpOnly exigiria mudar a autenticação e seria cookie de terceiros entre o Netlify e a API. Custo: XSS lê o token, que não expira (seção 14) |
+| D78 | **Cliente REST:** `fetch` injetado; erro com corpo vira `ApiError { status, code, message }` e falha de rede, `NetworkError`. Uma `Idempotency-Key` (`crypto.randomUUID()`) por clique; até 2 retentativas com a **mesma** chave em falha de rede, timeout de 10 s ou 502/503/504, nunca em 500 nem em 4xx. Os 409 de estado (`ROUND_NOT_ACCEPTING_BETS`, `BET_ALREADY_PLACED`, `ROUND_NOT_RUNNING`, `BET_NOT_PENDING`, `TOO_LATE`) disparam a ressincronização; o 422 não. Tabela `code → mensagem` em pt-BR, com mensagem genérica para o resto. O botão fica desabilitado durante a operação inteira, retentativas incluídas | É para isso que a D5 existe: pela D60, a requisição com a mesma chave espera o advisory lock e recebe o replay (E2E `K1`); não há 409 de "chave em uso". O 500 é bug (D58), e retentar não ajuda. Um 409 de estado diz que o estado local estava errado |
+| D79 | **Valor digitado da aposta:** `parseCreditsInput` converte texto em centavos sem float; aceita `,` ou `.` como separador decimal, até 2 casas, sem separador de milhar (`"1.000"` e `"1,000"` são recusados), e valida com `MIN_BET_CENTS` e `MAX_BET_CENTS` (D36) | O teclado decimal de alguns celulares só tem `.`. Recusar 3 casas evita ler "mil" como 1,00; com o teto de 1.000,00, separador de milhar não faz falta |
+| D80 | **Verificação no front:** o histórico abre os dados de `GET /rounds/:id/verify` (seed, hash e crash point) e confere `SHA-256(seed) === seedHash` com Web Crypto; o crash point não é recalculado no navegador, e o README ensina a conferir por fora | A conferência do hash é nativa e curta; portar a fórmula ficou fora do escopo (7.2) |
+| D81 | **Estilo e tema:** CSS Modules com variáveis CSS (`tokens.css`) e fontes do sistema, sem dependência. Tema original da **pipa**: a pipa sobe com o vento, e o crash é a linha que se rompe; paleta de céu de fim de tarde (azul-escuro, âmbar, turquesa). No M4 entram paleta, tipografia e layout; a arte é do M5 | Zero de runtime e nenhuma requisição de fonte, pela meta de 2 s em 4G (11.3). O tema não copia jogos existentes (11.2) |
+| D82 | **Testes do front:** Vitest com ambiente `node` por padrão e jsdom só nos testes de componente; `@testing-library/react`, `@testing-library/dom` e `@testing-library/user-event`, sem jest-dom; fakes próprios (`fakeFetch`, `FakeWebSocket`, `random` e `now` injetados), sem MSW; backoff e vigia com `vi.useFakeTimers` | A lógica testa rápido sem DOM. Injeção no lugar de interceptar a rede é o mesmo padrão das portas do back, sem dependência. Cada dependência nova é justificada no commit que a instala |
+| D83 | **Pastas do `apps/web/src`:** `app/` (composition root, ações e sessão), `net/` (REST, conexão WS, backoff, relógio, erros), `store/`, `ui/`, `game/` (palco 1280×720 e, no M5, o Pixi), `format/` e `config.ts`. Só o `app/` liga `net/` e `store/`; a UI chama as ações do `app/` | As ações precisam de um dono que não seja a store nem os componentes (11.1) |
+| D84 | **Sem E2E de navegador no M4.** O front é coberto por testes com fakes, pelos contratos tipados do `@crash/shared` e por roteiro manual. O Playwright é decidido no M6/M7, rodando no host e no CI | Os binários dos navegadores não cabem no AI Jail sem afrouxar a D18, e o E2E exigiria API, banco e front de pé |
 
 ### Decisões pendentes
 
@@ -158,10 +174,12 @@ crash-game/
 │   │           └── infrastructure/  # idempotência, filtros de erro, relógio do sistema
 │   └── web/
 │       └── src/
-│           ├── net/                 # cliente WS (reconexão, ressincronização), cliente REST
+│           ├── app/                 # composition root, ações e sessão (D83)
+│           ├── net/                 # conexão WS (reconexão, ressincronização), cliente REST, relógio
 │           ├── store/               # Zustand
 │           ├── ui/                  # componentes React
-│           └── game/                # PixiJS: CrashScene e objetos da cena
+│           ├── game/                # palco 1280×720; PixiJS (M5): CrashScene e objetos da cena
+│           └── format/              # créditos e multiplicador: formatação e leitura
 ├── packages/
 │   └── shared/                      # tipos de eventos WS, DTOs, multiplierAt(), constantes
 ├── docker-compose.yml
@@ -313,7 +331,7 @@ Ações que mexem com saldo exigem o header `Idempotency-Key: <uuid>`.
 |---|---|---|---|
 | `POST /players/guest` | `{ nickname }` (3 a 16 caracteres) | `{ playerId, nickname, token, balance }` | 400 |
 | `GET /wallet` | — | `{ balance, entries[] }` (últimos 20 lançamentos) | 401 |
-| `GET /rounds/current` | — (`Bearer` opcional) | estado atual da rodada (ou a última crashada, se nenhuma estiver aberta), apostas da rodada, `myBet` se houver `Bearer`, e `serverTime`; nunca inclui `crashPoint`, `crashAt` nem `serverSeed` antes do crash (D30, D63) | 401 se o `Bearer` vier inválido |
+| `GET /rounds/current` | — (`Bearer` opcional) | estado atual da rodada (ou a última crashada, se nenhuma estiver aberta), apostas da rodada (com `betId`, sem `playerId`; D71), `myBet` se houver `Bearer`, e `serverTime`; nunca inclui `crashPoint`, `crashAt` nem `serverSeed` antes do crash (D30, D63) | 401 se o `Bearer` vier inválido |
 | `GET /rounds/history?limit=20` | — | `[{ id, crashPoint, crashedAt }]` | — |
 | `GET /rounds/:id/verify` | — | `{ serverSeed, seedHash, crashPoint }` | 404; 409 se a rodada ainda não crashou |
 | `POST /bets` | `{ amount }` | `{ betId, roundId, amount, balance }` | 400, 401, 409 (`ROUND_NOT_ACCEPTING_BETS`, `BET_ALREADY_PLACED`), 422 (`INSUFFICIENT_BALANCE`, `IDEMPOTENCY_KEY_REUSED`) |
@@ -333,8 +351,8 @@ Todos os eventos têm o formato `{ type, payload, serverTime }`, tipados em `pac
 | `round:started` | `{ roundId, startedAt }` | Fim da janela de apostas |
 | `round:tick` | `{ roundId, multiplier }` | A cada 100 ms durante `RUNNING` (só para sincronizar) |
 | `round:crashed` | `{ roundId, crashPoint, serverSeed }` | No crash |
-| `bet:placed` | `{ roundId, nickname, amount }` | Alguém apostou |
-| `bet:cashed_out` | `{ roundId, nickname, multiplier, payout }` | Alguém fez cash out |
+| `bet:placed` | `{ roundId, betId, nickname, amount }` | Alguém apostou |
+| `bet:cashed_out` | `{ roundId, betId, nickname, multiplier, payout }` | Alguém fez cash out |
 
 O cliente não envia ações pelo WS. O canal é só de leitura, e a conexão não exige autenticação.
 
@@ -400,6 +418,7 @@ criar rodada (BETTING, 10 s) → start() → ticks a cada 100 ms → em crashAt:
 
 | Pasta | Faz | Não faz |
 |---|---|---|
+| `app/` | Cria store, clientes e conexão uma vez, fora do React; expõe as ações (criar guest, apostar, sacar, carregar carteira) e guarda a sessão (D77, D83) | Desenhar ou guardar estado de jogo fora da store |
 | `net/` | Conecta o WS, reconecta com backoff exponencial, chama a API REST, calcula o offset do relógio com base em `serverTime` | Lógica de UI |
 | `store/` | Guarda rodada, saldo, aposta do jogador, lista de jogadores e histórico | Chamar a rede diretamente a partir dos componentes |
 | `ui/` | Painel de aposta e cash out, carteira, lista de jogadores, histórico de multiplicadores | Desenhar o jogo |
@@ -408,9 +427,9 @@ criar rodada (BETTING, 10 s) → start() → ticks a cada 100 ms → em crashAt:
 ### 11.2 Regras
 
 - O Pixi é criado em `useEffect` no componente `<GameCanvas />`, com `app.destroy()` no cleanup. A cena se inscreve na store com `store.subscribe` e atualiza os próprios objetos.
-- A cada frame, o multiplicador exibido é `multiplierAt(serverNow − startedAt)`, onde `serverNow = Date.now() + clockOffset`. Os ticks do servidor só corrigem desvios.
+- A cada frame, o multiplicador exibido é `multiplierAt(serverNow − startedAt)`, onde `serverNow = performance.now() + clockOffset` (D74). Os ticks do servidor só corrigem desvios.
 - **Ao reconectar:** chama `GET /rounds/current` e reconstrói o estado antes de voltar a processar eventos.
-- O botão de cash out fica desabilitado enquanto a requisição está em andamento. A `Idempotency-Key` é gerada uma vez por clique.
+- O botão de cash out fica desabilitado enquanto a requisição está em andamento. A `Idempotency-Key` é gerada uma vez por clique; as retentativas automáticas reutilizam a mesma (D78).
 - Resolução lógica fixa de 1280×720, escalada para caber no container mantendo a proporção. A UI em React é responsiva até 360 px de largura.
 - O tema visual é **original**: não copiar arte, marca ou personagens de jogos existentes.
 
@@ -430,7 +449,7 @@ criar rodada (BETTING, 10 s) → start() → ticks a cada 100 ms → em crashAt:
 | Unitário (shared) | `multiplierAt`, `timeToCrash` | Vitest |
 | Integração (api) | Repositórios, transações, locks, idempotência, recuperação no boot | Vitest + Postgres 18 (banco `crash_game_test` do compose; service container no CI, D39) |
 | E2E (api) | Fluxo completo: guest → aposta → cash out → crash, ouvindo o WS | Vitest + Supertest + cliente `ws` |
-| Front | Store, cálculo de offset do relógio, lógica de reconexão (com WebSocket falso) | Vitest |
+| Front | Store, cálculo de offset do relógio, lógica de reconexão (com WebSocket falso), componentes | Vitest; jsdom e Testing Library só nos componentes (D82) |
 
 Banco de teste (D39, D40): `crash_game_test` no Postgres do compose, criado e migrado pelo `globalSetup`; `TRUNCATE` antes de cada teste. **Os arquivos de integração rodam em sequência** (`fileParallelism: false` no `vitest.config.integration.ts`), porque todos usam o mesmo banco; os unitários continuam em paralelo. Rodar com `pnpm --filter @crash/api test:int`.
 
@@ -443,7 +462,7 @@ Testes de concorrência obrigatórios:
 
 ## 13. Backlog por etapa
 
-Estimativa total: ~39 h (MVP sem M6: ~30 h).
+Estimativa total: ~43–45 h (MVP sem M6: ~34–36 h).
 
 ### M0 — Setup (3 h)
 - [x] Monorepo pnpm com `apps/api`, `apps/web` e `packages/shared`
@@ -480,13 +499,14 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [x] Gateway WS com os eventos da seção 8.2
 - [x] Testes de concorrência e E2E
 
-### M4 — Base do front (5 h)
+### M4 — Base do front (9 a 11 h)
 - [ ] Vite + React + TypeScript consumindo `shared`
 - [ ] Clientes REST e WS (reconexão, ressincronização, offset do relógio)
 - [ ] Store com Zustand
 - [ ] UI: painel de aposta, carteira, lista de jogadores, histórico
 - [ ] Regras do nickname (`^[A-Za-z0-9_-]{3,16}$`, aparado) movidas da api para o `@crash/shared`, usadas pelo `parseGuestBody` e pelo formulário do front (como a D36)
-- [ ] CORS na API liberado só para a origem do front, lida da configuração (variável nova no `readAppConfig`), nunca `*`; a conexão do WebSocket aceita só essa mesma origem
+- [ ] CORS na API liberado só para a origem do front, lida da configuração (variável nova no `readAppConfig`), nunca `*`; a conexão do WebSocket aceita só essa mesma origem (D69, D70)
+- [ ] `betId` público em `bet:placed`, `bet:cashed_out` e no `RoundBetDto`, com teste de que o `playerId` não aparece (D71)
 
 ### M5 — Cena PixiJS (6 h)
 - [ ] `<GameCanvas />` com ciclo de vida correto
@@ -495,6 +515,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [ ] Animação do crash
 - [ ] Escala responsiva
 - [ ] Ao receber `round:crashed`, a cena corrige o multiplicador exibido para o crash point exato: o tick (D68) e o cálculo local (D11) podem passar um pouco dele
+- [ ] Decidir como abrir o front num celular real para medir os 60 fps: pelo IP da rede local ou por túnel HTTPS. Os dois esbarram na origem única (D69, D70) e no contexto seguro exigido por `crypto.randomUUID` e `crypto.subtle`
 
 ### M6 — Polimento (4 h)
 - [ ] Partículas no crash e no cash out
@@ -506,7 +527,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [ ] Diagramas: contexto e fluxo de uma rodada
 - [ ] Medições de performance da seção 11.3, com antes e depois de pelo menos uma otimização
 - [ ] Api no Docker Compose (Dockerfile da api), como prevê a seção 3
-- [ ] Deploy do web e da api
+- [ ] Deploy do web e da api (a api exige `WEB_ORIGIN` com a origem do web, D69; o build do web exige `VITE_API_URL`, D73)
 
 ### Definição de pronto (para toda etapa)
 - [ ] Testes, lint e typecheck passando no CI
@@ -525,6 +546,9 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - **Sem limite de requisições no `POST /players/guest`:** qualquer pessoa cria quantos guests quiser, cada um com 1.000,00 créditos. Os créditos são fictícios, mas o endpoint permite inflar o banco. Limitação documentada também no README (Fase 5 do M3).
 - **O token do guest nunca expira:** não há expiração, rotação nem revogação; quem tiver o token age pelo jogador para sempre. Limitação documentada também no README (Fase 5 do M3).
 - **As chaves de idempotência não expiram:** a tabela `idempotency_keys` cresce sem limpeza. Uma rotina de expiração (por exemplo, 24 h) fica para depois. Limitação documentada também no README.
+- **CORS e origem do WebSocket não são autenticação (D69, D70):** protegem o jogador no navegador contra páginas de outra origem; um cliente fora do navegador manda o `Origin` que quiser. O canal WS é público e só de leitura (seção 8.2).
+- **Token do guest no `localStorage` (D77):** um XSS no front leria o token, que não expira. Mitigações: React escapa o texto, nada de `dangerouslySetInnerHTML`, nickname restrito pelo regex (D59) e CSP no deploy (M7). Vai para o README no fechamento do M4 (F9).
+- **Vigia de silêncio do WS acoplado ao `PAUSE_MS` (D76):** o cliente não conhece a pausa entre rodadas; com `PAUSE_MS` acima de cerca de 25 s, o vigia reconectaria à toa (sem dano, porque a ressincronização reconstrói o estado).
 - Escala horizontal do game loop (exigiria eleição de líder ou lock distribuído)
 - Chat entre jogadores
 - Dinheiro real de qualquer tipo
