@@ -1,11 +1,13 @@
 import { MAX_BET_CENTS, MIN_BET_CENTS } from '@crash/shared';
 import { Money } from '../../shared/domain/money.js';
+import { Multiplier } from '../../shared/domain/multiplier.js';
 import { Round } from '../../rounds/domain/round.js';
 import { ServerSeed } from '../../rounds/domain/server-seed.js';
 import {
   Bet,
   BetNotPendingError,
   BetRoundMismatchError,
+  CorruptedBetError,
   InvalidBetAmountError,
   RoundNotAcceptingBetsError,
   RoundNotRunningError,
@@ -265,5 +267,88 @@ describe('Bet', () => {
     // Aposta fora de PENDING
     bet.lose();
     expect(() => bet.lose()).toThrow(code('BET_NOT_PENDING'));
+  });
+});
+
+describe('Bet: snapshot e restore', () => {
+  function roundTrip(bet: Bet): Bet {
+    return Bet.restore(bet.toSnapshot());
+  }
+
+  /** Três apostas da mesma rodada: uma sacada em 6,04x, uma perdida e uma pendente. */
+  function betsInEveryStatus(): {
+    round: Round;
+    cashed: Bet;
+    lost: Bet;
+    pending: Bet;
+  } {
+    const round = bettingRound();
+    const cashed = placeBet(round, 1_001, 'player-1');
+    const lost = placeBet(round, 2_000, 'player-2');
+    const pending = placeBet(round, 3_000, 'player-3');
+    round.start(STARTED_AT);
+    cashed.cashOut({ round, now: STARTED_AT + 30_000 });
+    lost.lose();
+    return { round, cashed, lost, pending };
+  }
+
+  it('place guarda placedAt = now', () => {
+    expect(placeBet(bettingRound()).placedAt).toBe(PLACED_AT);
+  });
+
+  it('restore(toSnapshot()) reproduz apostas PENDING, CASHED_OUT e LOST sem registrar eventos', () => {
+    const { cashed, lost, pending } = betsInEveryStatus();
+    for (const original of [cashed, lost, pending]) {
+      const restored = roundTrip(original);
+      expect(restored.id).toBe(original.id);
+      expect(restored.roundId).toBe(original.roundId);
+      expect(restored.playerId).toBe(original.playerId);
+      expect(restored.amount.cents).toBe(original.amount.cents);
+      expect(restored.status).toBe(original.status);
+      expect(restored.cashoutMultiplier?.x100).toBe(
+        original.cashoutMultiplier?.x100,
+      );
+      expect(restored.payout?.cents).toBe(original.payout?.cents);
+      expect(restored.placedAt).toBe(PLACED_AT);
+      expect(restored.pullEvents()).toEqual([]);
+    }
+    expect(roundTrip(cashed).payout?.cents).toBe(6_046);
+  });
+
+  it('uma aposta PENDING reconstruída pode fazer cash out', () => {
+    const { round, pending } = betsInEveryStatus();
+    const restored = roundTrip(pending);
+    restored.cashOut({ round, now: STARTED_AT + 30_000 });
+    expect(restored.status).toBe('CASHED_OUT');
+    expect(restored.payout?.cents).toBe(18_120); // 3000 × 6,04
+  });
+
+  it('lança CorruptedBetError se status, multiplicador e payout não combinam', () => {
+    const { cashed, lost, pending } = betsInEveryStatus();
+    const multiplier = Multiplier.fromX100(200);
+    const corrupted = [
+      { ...cashed.toSnapshot(), cashoutMultiplier: null },
+      { ...cashed.toSnapshot(), payout: null },
+      { ...pending.toSnapshot(), payout: Money.fromCents(6_000) },
+      { ...lost.toSnapshot(), cashoutMultiplier: multiplier },
+      // 1001 × 6,04 = 6046, não 6047
+      { ...cashed.toSnapshot(), payout: Money.fromCents(6_047) },
+    ];
+    for (const snapshot of corrupted) {
+      expect(() => Bet.restore(snapshot)).toThrow(CorruptedBetError);
+    }
+  });
+
+  it('restore aceita valor fora dos limites atuais', () => {
+    const snapshot = { ...placeBet(bettingRound()).toSnapshot() };
+    const restored = Bet.restore({ ...snapshot, amount: Money.fromCents(50) });
+    expect(restored.amount.cents).toBe(50);
+  });
+
+  it('o erro carrega o code CORRUPTED_BET', () => {
+    const { cashed } = betsInEveryStatus();
+    expect(() => Bet.restore({ ...cashed.toSnapshot(), payout: null })).toThrow(
+      expect.objectContaining({ code: 'CORRUPTED_BET' }),
+    );
   });
 });

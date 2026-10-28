@@ -30,7 +30,22 @@ export class BetRoundMismatchError extends DomainError {
   readonly code = 'BET_ROUND_MISMATCH';
 }
 
+export class CorruptedBetError extends DomainError {
+  readonly code = 'CORRUPTED_BET';
+}
+
 export type BetStatus = 'PENDING' | 'CASHED_OUT' | 'LOST';
+
+export interface BetSnapshot {
+  id: string;
+  roundId: string;
+  playerId: string;
+  amount: Money;
+  status: BetStatus;
+  cashoutMultiplier: Multiplier | null;
+  payout: Money | null;
+  placedAt: number;
+}
 
 /**
  * Aposta de um jogador numa rodada (seção 6.3). Recebe `now` da aplicação
@@ -46,6 +61,7 @@ export class Bet extends AggregateRoot<BetEvent> {
     readonly roundId: string,
     readonly playerId: string,
     readonly amount: Money,
+    readonly placedAt: number,
   ) {
     super();
   }
@@ -66,7 +82,13 @@ export class Bet extends AggregateRoot<BetEvent> {
     if (!props.round.acceptsBetsAt(props.now)) {
       throw new RoundNotAcceptingBetsError('a rodada não aceita apostas agora');
     }
-    const bet = new Bet(props.id, props.round.id, props.playerId, props.amount);
+    const bet = new Bet(
+      props.id,
+      props.round.id,
+      props.playerId,
+      props.amount,
+      props.now,
+    );
     bet.record({
       type: 'BetPlaced',
       betId: bet.id,
@@ -75,6 +97,52 @@ export class Bet extends AggregateRoot<BetEvent> {
       amount: bet.amount,
     });
     return bet;
+  }
+
+  /**
+   * Reconstrói a aposta a partir do banco (D41), sem registrar eventos. Não
+   * revalida os limites de valor, que podem ter mudado desde a aposta.
+   */
+  static restore(snapshot: BetSnapshot): Bet {
+    const { status, cashoutMultiplier, payout } = snapshot;
+    const corrupted = (reason: string) =>
+      new CorruptedBetError(`aposta ${snapshot.id}: ${reason}`);
+
+    if (status === 'CASHED_OUT') {
+      if (cashoutMultiplier === null || payout === null) {
+        throw corrupted('CASHED_OUT sem multiplicador ou payout');
+      }
+      if (!payout.equals(snapshot.amount.multiply(cashoutMultiplier))) {
+        throw corrupted('payout diferente de amount × multiplicador');
+      }
+    } else if (cashoutMultiplier !== null || payout !== null) {
+      throw corrupted(`${status} com multiplicador ou payout`);
+    }
+
+    const bet = new Bet(
+      snapshot.id,
+      snapshot.roundId,
+      snapshot.playerId,
+      snapshot.amount,
+      snapshot.placedAt,
+    );
+    bet._status = status;
+    bet._cashoutMultiplier = cashoutMultiplier;
+    bet._payout = payout;
+    return bet;
+  }
+
+  toSnapshot(): BetSnapshot {
+    return {
+      id: this.id,
+      roundId: this.roundId,
+      playerId: this.playerId,
+      amount: this.amount,
+      status: this._status,
+      cashoutMultiplier: this._cashoutMultiplier,
+      payout: this._payout,
+      placedAt: this.placedAt,
+    };
   }
 
   get status(): BetStatus {
