@@ -13,6 +13,8 @@ export const ERROR_STATUS: Readonly<Record<string, number>> = {
 
   UNAUTHORIZED: 401,
 
+  ROUND_NOT_FOUND: 404,
+
   ROUND_NOT_ACCEPTING_BETS: 409,
   BET_ALREADY_PLACED: 409,
   ROUND_NOT_RUNNING: 409,

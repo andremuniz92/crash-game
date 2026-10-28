@@ -1,6 +1,9 @@
-import type { EntityManager } from '@mikro-orm/core';
+import { type EntityManager, LockMode } from '@mikro-orm/core';
 import type { Round } from '../domain/round.js';
-import type { RoundRepository } from '../domain/round-repository.js';
+import {
+  RoundNotFoundError,
+  type RoundRepository,
+} from '../domain/round-repository.js';
 import { roundToDomain, roundToRecord } from './round.mapper.js';
 import { RoundRecord } from './round.record.js';
 
@@ -32,5 +35,44 @@ export class MikroOrmRoundRepository implements RoundRepository {
       { disableIdentityMap: true },
     );
     return row ? roundToDomain(row) : null;
+  }
+
+  async findLatestCrashed(): Promise<Round | null> {
+    const row = await this.em.findOne(
+      RoundRecord,
+      { status: 'CRASHED' },
+      { orderBy: { crashedAt: 'desc' }, disableIdentityMap: true },
+    );
+    return row ? roundToDomain(row) : null;
+  }
+
+  async findCurrentForShare(): Promise<Round | null> {
+    const row = await this.em.findOne(
+      RoundRecord,
+      { status: { $ne: 'CRASHED' } },
+      { lockMode: LockMode.PESSIMISTIC_READ, disableIdentityMap: true },
+    );
+    return row ? roundToDomain(row) : null;
+  }
+
+  async findByIdForShare(id: string): Promise<Round | null> {
+    const row = await this.em.findOne(
+      RoundRecord,
+      { id },
+      { lockMode: LockMode.PESSIMISTIC_READ, disableIdentityMap: true },
+    );
+    return row ? roundToDomain(row) : null;
+  }
+
+  async getForUpdate(id: string): Promise<Round> {
+    const row = await this.em.findOne(
+      RoundRecord,
+      { id },
+      { lockMode: LockMode.PESSIMISTIC_WRITE, disableIdentityMap: true },
+    );
+    if (!row) {
+      throw new RoundNotFoundError(`a rodada ${id} não existe`);
+    }
+    return roundToDomain(row);
   }
 }
