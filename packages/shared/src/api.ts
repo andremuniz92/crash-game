@@ -104,3 +104,25 @@ export interface VerifyResponse {
   seedHash: string;
   crashPoint: number;
 }
+
+export interface PlaceBetRequest {
+  /** Centavos (D6). */
+  amount: number;
+}
+
+export interface PlaceBetResponse {
+  betId: string;
+  roundId: string;
+  amount: number;
+  /** Saldo depois do débito. */
+  balance: number;
+}
+
+export interface CashOutResponse {
+  betId: string;
+  /** ×100, calculado pelo servidor (seção 6.3). */
+  multiplier: number;
+  payout: number;
+  /** Saldo depois do crédito. */
+  balance: number;
+}
