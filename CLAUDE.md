@@ -482,6 +482,7 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [ ] Clientes REST e WS (reconexão, ressincronização, offset do relógio)
 - [ ] Store com Zustand
 - [ ] UI: painel de aposta, carteira, lista de jogadores, histórico
+- [ ] Regras do nickname (`^[A-Za-z0-9_-]{3,16}$`, aparado) movidas da api para o `@crash/shared`, usadas pelo `parseGuestBody` e pelo formulário do front (como a D36)
 
 ### M5 — Cena PixiJS (6 h)
 - [ ] `<GameCanvas />` com ciclo de vida correto
@@ -516,6 +517,8 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - **SNS/SQS:** publicar `RoundSettled` no SNS (via LocalStack) e consumir em uma fila SQS que alimenta histórico e estatísticas. Estimativa: +5 h. `RoundSettled` é um evento de integração, distinto do evento de domínio `BetsSettled` (D26).
 - Auto cash out (sacar automaticamente num multiplicador escolhido)
 - Login real com JWT, recuperação de conta
+- **Sem limite de requisições no `POST /players/guest`:** qualquer pessoa cria quantos guests quiser, cada um com 1.000,00 créditos. Os créditos são fictícios, mas o endpoint permite inflar o banco. Limitação documentada também no README (Fase 5 do M3).
+- **O token do guest nunca expira:** não há expiração, rotação nem revogação; quem tiver o token age pelo jogador para sempre. Limitação documentada também no README (Fase 5 do M3).
 - Escala horizontal do game loop (exigiria eleição de líder ou lock distribuído)
 - Chat entre jogadores
 - Dinheiro real de qualquer tipo
