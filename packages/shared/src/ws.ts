@@ -34,12 +34,18 @@ export type RoundCrashedMessage = WsEnvelope<
 
 export type BetPlacedMessage = WsEnvelope<
   'bet:placed',
-  { roundId: string; nickname: string; amount: number }
+  { roundId: string; betId: string; nickname: string; amount: number }
 >;
 
 export type BetCashedOutMessage = WsEnvelope<
   'bet:cashed_out',
-  { roundId: string; nickname: string; multiplier: number; payout: number }
+  {
+    roundId: string;
+    betId: string;
+    nickname: string;
+    multiplier: number;
+    payout: number;
+  }
 >;
 
 export type WsMessage =

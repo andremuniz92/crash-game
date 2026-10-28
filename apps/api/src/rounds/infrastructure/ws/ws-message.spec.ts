@@ -71,7 +71,7 @@ describe('toWsMessage (seção 8.2)', () => {
       ),
     ).toEqual({
       type: 'bet:placed',
-      payload: { roundId: ROUND, nickname: 'ana', amount: 2_500 },
+      payload: { roundId: ROUND, betId: BET, nickname: 'ana', amount: 2_500 },
       serverTime: NOW,
     });
     expect(
@@ -90,6 +90,7 @@ describe('toWsMessage (seção 8.2)', () => {
       type: 'bet:cashed_out',
       payload: {
         roundId: ROUND,
+        betId: BET,
         nickname: 'ana',
         multiplier: 182,
         payout: 4_550,
@@ -126,6 +127,38 @@ describe('toWsMessage (seção 8.2)', () => {
         expect(text).not.toContain(`"${key}"`);
       }
       expect(text).not.toContain(SEED.toHex());
+    }
+  });
+
+  it('B1: eventos de aposta levam o betId e nunca o playerId (D71)', () => {
+    const withNickname = { serverTime: NOW, nickname: 'ana' };
+    const messages = [
+      toWsMessage(
+        {
+          type: 'BetPlaced',
+          betId: BET,
+          roundId: ROUND,
+          playerId: PLAYER,
+          amount: Money.fromCents(2_500),
+        },
+        withNickname,
+      ),
+      toWsMessage(
+        {
+          type: 'BetCashedOut',
+          betId: BET,
+          roundId: ROUND,
+          playerId: PLAYER,
+          multiplier: Multiplier.fromX100(182),
+          payout: Money.fromCents(4_550),
+        },
+        withNickname,
+      ),
+    ];
+    for (const message of messages) {
+      expect(message?.payload).toHaveProperty('betId', BET);
+      expect(message?.payload).not.toHaveProperty('playerId');
+      expect(JSON.stringify(message)).not.toContain(PLAYER);
     }
   });
 

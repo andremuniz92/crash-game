@@ -62,6 +62,7 @@ export function toWsMessage(
         type: 'bet:placed',
         payload: {
           roundId: event.roundId,
+          betId: event.betId,
           nickname: required(nickname),
           amount: event.amount.cents,
         },
@@ -72,6 +73,7 @@ export function toWsMessage(
         type: 'bet:cashed_out',
         payload: {
           roundId: event.roundId,
+          betId: event.betId,
           nickname: required(nickname),
           multiplier: event.multiplier.x100,
           payout: event.payout.cents,

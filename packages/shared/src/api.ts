@@ -66,8 +66,12 @@ export type RoundDto = BettingRoundDto | RunningRoundDto | CrashedRoundDto;
 
 export type BetStatus = 'PENDING' | 'CASHED_OUT' | 'LOST';
 
-/** Aposta de qualquer jogador, como aparece para todos: sem playerId nem betId. */
+/**
+ * Aposta de qualquer jogador, como aparece para todos: com o betId, que não dá
+ * poder a ninguém (o cash out exige Bearer e posse), e nunca o playerId (D71).
+ */
 export interface RoundBetDto {
+  betId: string;
   nickname: string;
   amount: number;
   status: BetStatus;

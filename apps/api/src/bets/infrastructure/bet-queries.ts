@@ -3,6 +3,7 @@ import type { MikroORM } from '@mikro-orm/postgresql';
 import { BetRecord } from './bet.record.js';
 
 interface RoundBetRow {
+  id: string;
   nickname: string;
   /** bigint chega como string numa consulta crua (D42). */
   amount: string;
@@ -20,7 +21,7 @@ export class BetQueries {
 
   async betsOf(roundId: string): Promise<RoundBetDto[]> {
     const rows = await this.orm.em.getConnection().execute<RoundBetRow[]>(
-      `select p.nickname, b.amount, b.status, b.cashout_multiplier, b.payout
+      `select b.id, p.nickname, b.amount, b.status, b.cashout_multiplier, b.payout
          from bets b
          join players p on p.id = b.player_id
         where b.round_id = ?
@@ -28,6 +29,7 @@ export class BetQueries {
       [roundId],
     );
     return rows.map((row) => ({
+      betId: row.id,
       nickname: row.nickname,
       amount: Number(row.amount),
       status: row.status,

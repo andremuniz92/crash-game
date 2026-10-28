@@ -73,11 +73,12 @@ beforeEach(async () => {
 });
 
 describe('BetQueries', () => {
-  it('Q2: apostas da rodada com nickname, por ordem de aposta, só da rodada pedida', async () => {
+  it('Q2: apostas da rodada com betId e nickname, sem playerId, por ordem de aposta, só da rodada pedida', async () => {
     const queries = new BetQueries(await testOrm());
 
     expect(await queries.betsOf(CURRENT)).toEqual([
       {
+        betId: bet(3),
         nickname: 'bia',
         amount: 1_500,
         status: 'PENDING',
@@ -85,6 +86,7 @@ describe('BetQueries', () => {
         payout: null,
       },
       {
+        betId: bet(2),
         nickname: 'ana',
         amount: 2_000,
         status: 'PENDING',

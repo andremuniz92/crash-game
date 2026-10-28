@@ -151,7 +151,7 @@ describe('WebSocket (E2E, seção 8.2)', () => {
       },
       {
         type: 'bet:placed',
-        payload: { roundId: LOW.id, nickname: 'ana', amount: 1_000 },
+        payload: { roundId: LOW.id, betId, nickname: 'ana', amount: 1_000 },
         serverTime: T0,
       },
       {
@@ -163,6 +163,7 @@ describe('WebSocket (E2E, seção 8.2)', () => {
         type: 'bet:cashed_out',
         payload: {
           roundId: LOW.id,
+          betId,
           nickname: 'ana',
           multiplier: cashed.multiplier,
           payout: cashed.payout,

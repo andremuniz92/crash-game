@@ -163,7 +163,7 @@ describe('rodadas (E2E, D63)', () => {
     });
   });
 
-  it('X12: apostas com nickname e sem playerId; myBet só com Bearer; Bearer inválido dá 401', async () => {
+  it('X12: apostas com betId e nickname, sem playerId (D71); myBet só com Bearer; Bearer inválido dá 401', async () => {
     const guest = async (nickname: string) =>
       (await http().post('/players/guest').send({ nickname }).expect(201))
         .body as GuestResponse;
@@ -196,6 +196,7 @@ describe('rodadas (E2E, D63)', () => {
     const anonymous = await current();
     expect(anonymous.body.bets).toEqual([
       {
+        betId: biaBet,
         nickname: 'bia',
         amount: 1_500,
         status: 'PENDING',
@@ -203,6 +204,7 @@ describe('rodadas (E2E, D63)', () => {
         payout: null,
       },
       {
+        betId: anaBet,
         nickname: 'ana',
         amount: 2_000,
         status: 'PENDING',
@@ -211,7 +213,11 @@ describe('rodadas (E2E, D63)', () => {
       },
     ]);
     expect(anonymous.body.myBet).toBeNull();
-    for (const hidden of [ana.playerId, bia.playerId, anaBet, biaBet]) {
+    // O betId é público (D71); o playerId nunca sai nas apostas da rodada.
+    for (const listed of anonymous.body.bets as object[]) {
+      expect(listed).not.toHaveProperty('playerId');
+    }
+    for (const hidden of [ana.playerId, bia.playerId]) {
       expect(anonymous.text).not.toContain(hidden);
     }
 
@@ -223,7 +229,9 @@ describe('rodadas (E2E, D63)', () => {
       cashoutMultiplier: null,
       payout: null,
     });
-    expect(mine.text).not.toContain(biaBet);
+    for (const hidden of [ana.playerId, bia.playerId]) {
+      expect(mine.text).not.toContain(hidden);
+    }
 
     const invalid = await http()
       .get('/rounds/current')

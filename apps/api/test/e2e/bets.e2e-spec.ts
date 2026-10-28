@@ -295,6 +295,7 @@ describe('apostas e cash out (E2E, seções 10.1 e 10.2)', () => {
     expect(current.round?.status).toBe('CRASHED');
     expect(current.bets).toEqual([
       {
+        betId,
         nickname: 'ana',
         amount: 1_000,
         status: 'CASHED_OUT',
