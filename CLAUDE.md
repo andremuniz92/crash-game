@@ -88,6 +88,13 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D29 | **Agregados recebem `now: number`**, não o `Clock`. A interface `Clock` fica em `shared/domain/`; a aplicação lê o relógio uma vez por operação e repassa o instante | Todas as regras de uma operação usam o mesmo instante. No cash out, `now < crashAt` e o multiplicador são calculados sobre o mesmo `now`; duas leituras do relógio poderiam discordar na fronteira do crash |
 | D30 | **`crashPoint` e `crashAt` são secretos como a `serverSeed`** até o crash: sem getter público no `Round`, fora dos eventos `RoundCreated` e `RoundStarted` e fora do `GET /rounds/current`. As regras usam `acceptsCashOutAt(now)`; os valores só saem por `revealCrashPoint()` depois do crash | Quem sabe `crashAt` sabe o crash point (`crashAt − startedAt = timeToCrash(crashPoint)`) e poderia sacar 1 ms antes |
 | D31 | **Eventos de domínio** são objetos simples, tipados como union discriminada por `type`. Os agregados herdam de `AggregateRoot` (`shared/domain/`), que acumula os eventos; `pullEvents()` devolve e esvazia a lista | Eventos serializáveis e fáceis de comparar em teste; a infraestrutura publica o que o agregado acumulou depois do commit |
+| D32 | O `bets/domain` declara a interface **`RoundView`** (`id`, `status`, `acceptsBetsAt`, `acceptsCashOutAt`, `multiplierAt`), que o `Round` satisfaz por tipagem estrutural | O `bets` não importa o domínio do `rounds` (seção 5); o typecheck dos testes, que usam o `Round` real, garante a compatibilidade |
+| D33 | **Uma aposta por jogador por rodada** e **posse da aposta** ficam fora do agregado: a aplicação consulta o repositório (`findByRoundAndPlayer`, `findByIdAndPlayer`), e o `UNIQUE (round_id, player_id)` é a última barreira. Aposta de outro jogador responde 404 | Um `Bet` não conhece as outras apostas nem quem pergunta; 404 não revela que a aposta existe |
+| D34 | **Erros do cash out:** rodada em `BETTING` → `ROUND_NOT_RUNNING`; rodada em `RUNNING` com `now ≥ crashAt` → `TOO_LATE`; rodada já em `CRASHED` → `TOO_LATE` | Para o jogador, cash out depois do crash é atraso; a resposta é a mesma dos dois lados da corrida com o game loop |
+| D35 | **`BetsSettled`** é produzido pelo serviço de domínio `settleBets(round, bets)`, que exige a rodada em `CRASHED`, chama `lose()` nas apostas `PENDING` e devolve `BetsSettled { roundId, lostBetIds }` | Um agregado não emite evento sobre várias instâncias |
+| D36 | Limites de aposta (`MIN_BET_CENTS = 100`, `MAX_BET_CENTS = 100_000`) no **`@crash/shared`** | O front valida o formulário com os mesmos valores; uma fonte só, como o `ONE_X` |
+| D37 | **`LedgerEntry`** é objeto de valor sem `id` (`type`, `amount` com sinal, `betId`, `createdAt`); o `id` é identity do banco (M2). A invariante "saldo = soma do extrato" é testada no domínio, numa carteira em memória, e no M2 também no banco | Sem gerar id no domínio (D22); o banco já tem a fonte de verdade do extrato completo |
+| D38 | **Repositórios** são interfaces assíncronas no domínio de cada contexto, sem implementação até o M2. O lock pessimista é explícito no contrato (`WalletRepository.getForUpdate`). Snapshot e reconstrução dos agregados ficam para o M2; o histórico de rodadas é consulta da aplicação (M3) | O contrato diz o que a regra de concorrência (10.1, 10.2) precisa; os detalhes de mapeamento são da persistência |
 
 ### Decisões pendentes
 
@@ -196,16 +203,17 @@ Invariantes:
 
 Invariantes:
 - Só pode ser criada se a rodada estiver em `BETTING` e `now < bettingEndsAt`.
-- Valor mínimo de 1,00 crédito e máximo de 1.000,00.
-- Cash out só se a rodada estiver em `RUNNING`, a aposta em `PENDING` e `now < crashAt`.
+- Valor mínimo de 1,00 crédito e máximo de 1.000,00 (`MIN_BET_CENTS` e `MAX_BET_CENTS` do `@crash/shared`, D36).
+- Cash out só se a aposta estiver em `PENDING` (senão `BET_NOT_PENDING`), a rodada em `RUNNING` (em `BETTING`: `ROUND_NOT_RUNNING`) e `now < crashAt` (senão, ou se a rodada já crashou, `TOO_LATE`; D34).
+- Uma aposta por jogador por rodada e posse da aposta são verificadas pela aplicação e pelo banco, não pelo agregado (D33). O agregado consulta a rodada pela interface `RoundView` (D32).
 - O multiplicador do cash out é calculado **pelo servidor** com `multiplierAt(now)`. O cliente nunca informa o multiplicador.
-- Quando a rodada termina, todas as apostas `PENDING` viram `LOST`.
+- Quando a rodada termina, todas as apostas `PENDING` viram `LOST`, pelo serviço de domínio `settleBets(round, bets)`, que devolve `BetsSettled` (D35).
 
 ### 6.4 Agregado `Wallet`
 
 - Um por jogador. Saldo inicial: **1.000,00 créditos** (100000 centavos).
 - `debit(amount)` lança `InsufficientBalanceError` se o saldo ficar negativo.
-- Toda movimentação gera um `LedgerEntry` (`BET_PLACED`, `CASHOUT`, `INITIAL_GRANT`).
+- Toda movimentação gera um `LedgerEntry` (`BET_PLACED`, `CASHOUT`, `INITIAL_GRANT`), com valor em centavos com sinal (débito negativo), `betId` quando houver e `createdAt`. O `LedgerEntry` não tem `id` no domínio; o banco gera (D37).
 - Invariante: o saldo é sempre igual à soma do extrato. Isso vira um teste.
 
 ### 6.5 Eventos de domínio
@@ -305,7 +313,7 @@ O cliente não envia ações pelo WS. O canal é só de leitura, e a conexão n�
 |---|---|---|
 | `players` | `id`, `nickname`, `token_hash`, `created_at` | `token_hash` único; o token é guardado como hash, nunca em texto puro |
 | `wallets` | `player_id` (PK/FK), `balance`, `version` | `CHECK (balance >= 0)` |
-| `ledger_entries` | `id`, `player_id`, `type`, `amount` (com sinal), `bet_id`, `created_at` | índice em `(player_id, created_at)` |
+| `ledger_entries` | `id` (identity, gerado pelo banco; D37), `player_id`, `type`, `amount` (com sinal), `bet_id`, `created_at` | índice em `(player_id, created_at)` |
 | `rounds` | `id`, `status`, `server_seed`, `seed_hash`, `crash_point`, `betting_ends_at`, `started_at`, `crash_at`, `crashed_at` | índice em `(status)` e `(crashed_at)` |
 | `bets` | `id`, `round_id`, `player_id`, `amount`, `status`, `cashout_multiplier`, `payout`, `created_at` | `UNIQUE (round_id, player_id)` |
 | `idempotency_keys` | `key`, `player_id`, `endpoint`, `response_status`, `response_body`, `created_at` | PK `(player_id, key)` |
@@ -332,8 +340,8 @@ Depois do commit: emite `BetPlaced`, que vira o broadcast `bet:placed`.
 
 Em uma única transação:
 1. Verifica a idempotência.
-2. Carrega a aposta com lock e valida que pertence ao jogador e está `PENDING`.
-3. Carrega a rodada e valida `RUNNING` e `now < crashAt`. **É essa comparação com `crashAt` que resolve a corrida com o game loop:** o momento do crash é fixo e conhecido de antemão, então não importa se o loop atrasou.
+2. Carrega a aposta do jogador com lock (`findByIdAndPlayer`; aposta de outro jogador responde 404, D33) e valida que está `PENDING`.
+3. Carrega a rodada e valida `RUNNING` e `now < crashAt` (rodada já crashada também é `TOO_LATE`, D34). **É essa comparação com `crashAt` que resolve a corrida com o game loop:** o momento do crash é fixo e conhecido de antemão, então não importa se o loop atrasou.
 4. `multiplier = multiplierAt(now − startedAt)`; `payout = amount × multiplier`.
 5. Credita na carteira (com lock) e grava o `LedgerEntry`.
 
@@ -410,14 +418,14 @@ Estimativa total: ~39 h (MVP sem M6: ~30 h).
 - [x] README inicial com como rodar
 
 ### M1 — Domínio com DDD, implementado com TDD (5 h)
-- [ ] VOs: `Money`, `Multiplier`, `ServerSeed`, `SeedHash`
-- [ ] `multiplierAt` e `timeToCrash` em `shared`
-- [ ] Geração do crash point e testes de distribuição
-- [ ] Agregado `Round` com máquina de estados
-- [ ] Agregado `Bet` com regras de aposta e cash out
-- [ ] Agregado `Wallet` com extrato
-- [ ] Interfaces de repositório e `Clock`
-- [ ] Eventos de domínio
+- [x] VOs: `Money`, `Multiplier`, `ServerSeed`, `SeedHash`
+- [x] `multiplierAt` e `timeToCrash` em `shared`
+- [x] Geração do crash point e testes de distribuição
+- [x] Agregado `Round` com máquina de estados
+- [x] Agregado `Bet` com regras de aposta e cash out
+- [x] Agregado `Wallet` com extrato
+- [x] Interfaces de repositório e `Clock`
+- [x] Eventos de domínio
 
 ### M2 — Persistência (5 h)
 - [ ] Configuração do MikroORM
