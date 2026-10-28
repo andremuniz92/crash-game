@@ -1,9 +1,11 @@
 import type { EntityManager } from '@mikro-orm/core';
 import type { MikroORM } from '@mikro-orm/postgresql';
+import { settleRound } from '../../../bets/application/settle-round.js';
 import type { BetRepository } from '../../../bets/domain/bet-repository.js';
 import { MikroOrmBetRepository } from '../../../bets/infrastructure/mikro-orm-bet.repository.js';
 import { MikroOrmPlayerStore } from '../../../players/mikro-orm-player-store.js';
 import type { PlayerStore } from '../../../players/player-store.js';
+import type { RoundSettlement } from '../../../rounds/application/round-settlement.js';
 import type { RoundRepository } from '../../../rounds/domain/round-repository.js';
 import { MikroOrmRoundRepository } from '../../../rounds/infrastructure/mikro-orm-round.repository.js';
 import type { WalletRepository } from '../../../wallet/domain/wallet-repository.js';
@@ -16,6 +18,7 @@ export interface TransactionScope {
   bets: BetRepository;
   wallets: WalletRepository;
   players: PlayerStore;
+  settlement: RoundSettlement;
 }
 
 /**
@@ -33,10 +36,13 @@ export class MikroOrmUnitOfWork implements UnitOfWork<TransactionScope> {
 }
 
 function scopeFor(em: EntityManager): TransactionScope {
+  const bets = new MikroOrmBetRepository(em);
   return {
     rounds: new MikroOrmRoundRepository(em),
-    bets: new MikroOrmBetRepository(em),
+    bets,
     wallets: new MikroOrmWalletRepository(em),
     players: new MikroOrmPlayerStore(em),
+    // O rounds liquida as apostas pelo bets/application, sem ver o repositório (D56).
+    settlement: { settle: (round) => settleRound({ bets }, round) },
   };
 }
