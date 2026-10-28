@@ -1,10 +1,10 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
-import { WsAdapter } from '@nestjs/platform-ws';
 import { Test } from '@nestjs/testing';
 import type { App } from 'supertest/types.js';
 import { AppModule } from '../../src/app.module.js';
+import { configureApp } from '../../src/configure-app.js';
 import type { SeedGenerator } from '../../src/rounds/application/seed-generator.js';
 import { ServerSeed } from '../../src/rounds/domain/server-seed.js';
 import { SEED_GENERATOR } from '../../src/rounds/infrastructure/seed-generator.token.js';
@@ -85,7 +85,7 @@ export async function createTestApp(
   const app = moduleRef.createNestApplication<INestApplication<App>>({
     logger: false,
   });
-  app.useWebSocketAdapter(new WsAdapter(app));
+  configureApp(app, config);
   await app.listen(0, '127.0.0.1');
   return app;
 }
