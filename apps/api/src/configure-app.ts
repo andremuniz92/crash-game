@@ -1,11 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
-import { WsAdapter } from '@nestjs/platform-ws';
+import { OriginCheckedWsAdapter } from './rounds/infrastructure/ws/origin-checked-ws-adapter.js';
 import type { AppConfig } from './shared/infrastructure/config/app-config.js';
 import { isAllowedOrigin } from './shared/infrastructure/http/origin.js';
 
 /**
  * O que a app precisa além dos módulos, igual no boot e nos testes E2E:
- * CORS só para a origem do front (D69) e o adaptador do WebSocket.
+ * CORS e WebSocket só para a origem do front (D69, D70).
  */
 export function configureApp(app: INestApplication, config: AppConfig): void {
   app.enableCors({
@@ -18,5 +18,5 @@ export function configureApp(app: INestApplication, config: AppConfig): void {
     methods: ['GET', 'POST'],
     allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'],
   });
-  app.useWebSocketAdapter(new WsAdapter(app));
+  app.useWebSocketAdapter(new OriginCheckedWsAdapter(app, config.webOrigin));
 }
