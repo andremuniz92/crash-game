@@ -43,6 +43,18 @@ export class MikroOrmBetRepository implements BetRepository {
     return row ? betToDomain(row) : null;
   }
 
+  async findByIdAndPlayer(
+    betId: string,
+    playerId: string,
+  ): Promise<Bet | null> {
+    const row = await this.em.findOne(
+      BetRecord,
+      { id: betId, playerId },
+      { disableIdentityMap: true },
+    );
+    return row ? betToDomain(row) : null;
+  }
+
   async findByRoundAndPlayer(
     roundId: string,
     playerId: string,

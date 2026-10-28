@@ -175,3 +175,15 @@ describe('MikroOrmBetRepository', () => {
     ]);
   });
 });
+
+describe('MikroOrmBetRepository.findByIdAndPlayer', () => {
+  it('BR1: devolve a aposta do próprio jogador; de outro jogador ou inexistente, null', async () => {
+    await (await bets()).save(place(betId(1), P1, BETTING_ENDS_AT - 1));
+
+    expect((await (await bets()).findByIdAndPlayer(betId(1), P1))?.id).toBe(
+      betId(1),
+    );
+    expect(await (await bets()).findByIdAndPlayer(betId(1), P2)).toBeNull();
+    expect(await (await bets()).findByIdAndPlayer(betId(9), P1)).toBeNull();
+  });
+});
