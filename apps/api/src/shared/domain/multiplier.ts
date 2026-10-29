@@ -1,4 +1,4 @@
-import { ONE_X } from '@crash/shared';
+import { MAX_MULTIPLIER_X100, ONE_X } from '@crash/shared';
 import { DomainError } from './domain-error.js';
 
 export class InvalidMultiplierError extends DomainError {
@@ -8,7 +8,7 @@ export class InvalidMultiplierError extends DomainError {
 /** Multiplicador como inteiro ×100 (D21), entre 1,00x e o teto de 1.000.000,00x (D24). */
 export class Multiplier {
   static readonly MIN_X100 = ONE_X;
-  static readonly MAX_X100 = 100_000_000;
+  static readonly MAX_X100 = MAX_MULTIPLIER_X100;
 
   private constructor(readonly x100: number) {}
 
