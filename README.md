@@ -288,6 +288,7 @@ recalcular o crash point com a fórmula da seção 7.2 do CLAUDE.md.
 | NestJS     | 12.2   |
 | MikroORM   | 7.2    |
 | React      | 19.3   |
+| Zustand    | 5.0    |
 | Vite       | 8.3    |
 | Vitest     | 5.0    |
 | PostgreSQL | 18     |
