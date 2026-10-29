@@ -17,6 +17,7 @@ import {
   HISTORY_LIMIT,
   initialGameState,
   setBalance,
+  setConnection,
   setPending,
   signIn,
   signOut,
@@ -113,6 +114,15 @@ describe('applySnapshot (D75)', () => {
       player: null,
       balance: null,
       pending: { bet: false, cashOut: false },
+      connection: 'connecting',
+    });
+  });
+
+  it('G20: setConnection muda só o campo connection', () => {
+    const before = state({ round: betting(), balance: 100_000 });
+    expect(setConnection(before, 'live')).toEqual({
+      ...before,
+      connection: 'live',
     });
   });
 

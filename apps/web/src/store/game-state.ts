@@ -27,7 +27,11 @@ export interface GameState {
   balance: number | null;
   /** Ação em andamento: o botão fica desabilitado, inclusive nas retentativas (D78). */
   pending: { bet: boolean; cashOut: boolean };
+  /** Estado da conexão WS (D76), para o cabeçalho. */
+  connection: ConnectionStatus;
 }
+
+export type ConnectionStatus = 'connecting' | 'syncing' | 'live' | 'waiting';
 
 export interface Player {
   playerId: string;
@@ -45,7 +49,15 @@ export const initialGameState: GameState = {
   player: null,
   balance: null,
   pending: { bet: false, cashOut: false },
+  connection: 'connecting',
 };
+
+export function setConnection(
+  state: GameState,
+  connection: ConnectionStatus,
+): GameState {
+  return state.connection === connection ? state : { ...state, connection };
+}
 
 /** O guest entrou ou voltou (sessão restaurada), com o saldo conhecido. */
 export function signIn(
