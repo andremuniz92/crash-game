@@ -182,16 +182,26 @@ O `vite build` de produção (e o `pnpm build` da raiz) falha sem `VITE_API_URL`
 inválida, em vez de gerar uma página que só quebra ao abrir (D73, D85). O Vite lê o `.env` da raiz
 e só expõe ao front as variáveis com prefixo `VITE_`.
 
-O navegador precisa de contexto seguro (HTTPS ou `localhost`): é nele que existem o
-`crypto.randomUUID`, que gera as `Idempotency-Key`, e o `crypto.subtle`, que confere o SHA-256 da
-seed. Fora dele, a verificação aparece como indisponível.
+A conferência do SHA-256 da seed usa o `crypto.subtle`, que só existe em contexto seguro (HTTPS ou
+`localhost`). Fora dele, a verificação aparece como indisponível, e o resto do jogo funciona: as
+`Idempotency-Key` saem do `crypto.getRandomValues`, que existe também em HTTP (D96).
 
-**Testando num celular.** O front abre pelo IP da rede local (o Vite escuta em `0.0.0.0`), mas essa
-é outra origem, e a API recusa. Para testar: troque temporariamente a `WEB_ORIGIN` no `.env` para
-`http://<IP>:5173`, reinicie o `pnpm dev` e, ao terminar, volte para `http://localhost:5173`. Em
-HTTP pelo IP não há contexto seguro: a verificação fica indisponível, e o `crypto.randomUUID` também
-não existe, então apostar exige HTTPS (um túnel, por exemplo). Como medir os 60 fps no celular é
-uma decisão do M5.
+**Testando num celular** (D98). O front abre pelo IP da rede local (o Vite escuta em `0.0.0.0`),
+mas essa é outra origem, e a API recusa. Além disso, no celular `localhost` é o próprio celular,
+então o front também precisa saber o IP da API. Troque temporariamente as duas variáveis no `.env`:
+
+```sh
+WEB_ORIGIN=http://<IP>:5173
+VITE_API_URL=http://<IP>:3000
+```
+
+Reinicie o `pnpm dev` e abra `http://<IP>:5173` no celular. Para medir desempenho, use o build de
+produção, e não o dev: no lugar do `pnpm dev`, suba só a API (`pnpm --filter @crash/shared build`
+e `pnpm --filter @crash/api dev`) e, em outro terminal, rode
+`pnpm --filter @crash/web build && pnpm --filter @crash/web preview --host --port 5173 --strictPort`.
+Ao terminar, volte as duas variáveis para `http://localhost:5173` e `http://localhost:3000`. Pelo
+IP, a verificação fica indisponível (não há contexto seguro), e apostar e sacar funcionam. O
+firewall do host precisa liberar as portas 3000 e 5173 na rede local.
 
 **Linha de base do bundle (fim do M4).** `vite build` com `VITE_API_URL` definida; é o "antes" das
 medições da seção 11.3, que ficam para o M7.

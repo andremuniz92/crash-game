@@ -5,6 +5,7 @@ import './ui/tokens.css';
 import './ui/base.css';
 import { createActions } from './app/actions.js';
 import { GameProvider } from './app/game-context.js';
+import { createIdempotencyKey } from './app/idempotency-key.js';
 import { whenLive } from './app/when-live.js';
 import { createSessionStorage, type KeyValueStorage } from './app/session.js';
 import { readWebConfig } from './config.js';
@@ -66,7 +67,7 @@ const actions = createActions({
   api,
   store,
   session: createSessionStorage(browserStorage()),
-  newKey: () => crypto.randomUUID(),
+  newKey: () => createIdempotencyKey(),
   resync: () => connection?.resync(),
   // Fora de HTTPS e localhost, o navegador não oferece o subtle (D80).
   subtle: globalThis.crypto?.subtle,

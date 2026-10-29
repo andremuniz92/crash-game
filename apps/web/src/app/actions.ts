@@ -92,7 +92,7 @@ export function createActions({
   api: ApiClient;
   store: GameStore;
   session: SessionStorage;
-  /** `crypto.randomUUID()` em produção. */
+  /** `createIdempotencyKey` em produção (D96). */
   newKey: () => string;
   /** Ressincronização da conexão (D76). */
   resync: () => void;
