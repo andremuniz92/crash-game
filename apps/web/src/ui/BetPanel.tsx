@@ -4,6 +4,7 @@ import { useGame, useGameState } from '../app/game-context.js';
 import { formatCredits } from '../format/credits.js';
 import { formatMultiplier } from '../format/multiplier.js';
 import { betLimitsHint, readBetInput } from './bet-input.js';
+import { CashOutValue } from './CashOutValue.js';
 import styles from './BetPanel.module.css';
 import { useBettingOpen } from './use-betting-open.js';
 
@@ -112,6 +113,7 @@ export function BetPanel() {
         onClick={() => void cashOut()}
       >
         Sacar
+        <CashOutValue />
       </button>
       <p className={styles.myBet}>{describeMyBet(myBet)}</p>
       {visibleError && (
