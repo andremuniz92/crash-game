@@ -21,6 +21,9 @@
 }
 
 .panel {
+  display: grid;
+  gap: var(--gap);
+  align-content: start;
   padding: var(--gap);
   border: 1px solid var(--sky-line);
   border-radius: var(--radius);

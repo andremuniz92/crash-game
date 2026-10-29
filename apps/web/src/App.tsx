@@ -5,8 +5,10 @@ import { MultiplierText } from './game/MultiplierText.js';
 import { BetPanel } from './ui/BetPanel.js';
 import { GuestForm } from './ui/GuestForm.js';
 import { History } from './ui/History.js';
+import { PlayersList } from './ui/PlayersList.js';
 import { Header } from './ui/Header.js';
 import { RoundAnnouncer } from './ui/RoundAnnouncer.js';
+import { WalletPanel } from './ui/WalletPanel.js';
 
 /** Palco à esquerda e painel à direita; em coluna abaixo de 768 px (D81). */
 export function App() {
@@ -23,7 +25,15 @@ export function App() {
           <History />
         </section>
         <aside className={styles.panel}>
-          {signedIn ? <BetPanel /> : <GuestForm />}
+          {signedIn ? (
+            <>
+              <BetPanel />
+              <WalletPanel />
+            </>
+          ) : (
+            <GuestForm />
+          )}
+          <PlayersList />
         </aside>
       </main>
       <RoundAnnouncer />

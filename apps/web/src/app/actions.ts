@@ -2,6 +2,7 @@ import type {
   ClientErrorCode,
   CurrentRoundResponse,
   VerifyResponse,
+  WalletResponse,
 } from '@crash/shared';
 import { type ApiClient, ApiError } from '../net/api-client.js';
 import { withRetry } from '../net/retry.js';
@@ -10,6 +11,7 @@ import {
   applyCashedOut,
   type GameState,
   publishedHashOf,
+  setBalance,
   setHistory,
   setPending,
   signIn,
@@ -34,6 +36,8 @@ export interface Actions {
   cashOut(): Promise<ActionResult>;
   /** GET /rounds/history mesclado ao que o WS trouxe; falha de rede não apaga nada. */
   loadHistory(): Promise<void>;
+  /** GET /wallet: saldo e os últimos lançamentos; atualiza o saldo da store. */
+  loadWallet(): Promise<WalletResult>;
   /** GET /rounds/:id/verify e o SHA-256 da seed contra o hash publicado antes (D80, D86). */
   verifyRound(roundId: string): Promise<VerifyResult>;
   /**
@@ -43,6 +47,10 @@ export interface Actions {
    */
   fetchSnapshot(signal?: AbortSignal): Promise<CurrentRoundResponse>;
 }
+
+export type WalletResult =
+  | { status: 'done'; wallet: WalletResponse }
+  | { status: 'failed'; message: string };
 
 /** Resultado da verificação de uma rodada (D80, D86). */
 export type VerifyResult =
@@ -100,7 +108,9 @@ export function createActions({
     update(signOut);
   }
 
-  function failure(error: unknown): ActionResult {
+  function failure(
+    error: unknown,
+  ): Extract<ActionResult, { status: 'failed' }> {
     if (error instanceof ApiError) {
       if (error.status === 401) forget();
       if (
@@ -206,6 +216,18 @@ export function createActions({
         update((state) => setHistory(state, items));
       } catch {
         // Fica o que já havia; a próxima chegada a live tenta de novo.
+      }
+    },
+
+    async loadWallet() {
+      const saved = session.load();
+      if (!saved) return { status: 'failed', message: errorMessage(null) };
+      try {
+        const wallet = await api.wallet(saved.token);
+        update((state) => setBalance(state, wallet.balance));
+        return { status: 'done', wallet };
+      } catch (error) {
+        return failure(error);
       }
     },
 

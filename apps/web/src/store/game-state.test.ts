@@ -118,6 +118,7 @@ describe('applySnapshot (D75)', () => {
       pending: { bet: false, cashOut: false },
       connection: 'connecting',
       publishedHashes: [],
+      ownOperations: 0,
     });
   });
 
@@ -539,5 +540,35 @@ describe('hash publicado antes do crash (D86)', () => {
     expect(current.publishedHashes[0]?.roundId).toBe(
       '00000000-0000-4000-8000-000000000424',
     );
+  });
+});
+
+describe('ownOperations (carteira)', () => {
+  it('GR5: as respostas de aposta e de cash out contam; snapshot e mensagens do WS, não', () => {
+    let current = state({ round: betting() });
+    current = applyBetPlaced(current, {
+      betId: bet(1),
+      roundId: ROUND,
+      amount: 1_000,
+      balance: 99_000,
+    });
+    expect(current.ownOperations).toBe(1);
+    current = applyCashedOut(current, {
+      betId: bet(1),
+      multiplier: 150,
+      payout: 1_500,
+      balance: 100_500,
+    });
+    expect(current.ownOperations).toBe(2);
+
+    current = applyMessage(current, msg.started());
+    current = applyMessage(current, msg.crashed());
+    current = applySnapshot(current, {
+      round: betting(OTHER),
+      bets: [],
+      myBet: null,
+      serverTime: T0,
+    });
+    expect(current.ownOperations).toBe(2);
   });
 });

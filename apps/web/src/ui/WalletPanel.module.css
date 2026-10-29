@@ -1,0 +1,76 @@
+.wallet {
+  display: grid;
+  gap: 8px;
+}
+
+.toggle {
+  min-height: var(--touch);
+  border: 1px solid var(--sky-line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  text-align: left;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.toggle[aria-expanded='true'] {
+  border-color: var(--amber);
+}
+
+.toggle:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.body {
+  display: grid;
+  gap: 6px;
+}
+
+.balance {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  font-family: var(--font);
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+}
+
+/* Extrato longo rola por dentro, sem empurrar a página. */
+.list {
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.credit {
+  color: var(--teal);
+  font-family: var(--font-mono);
+}
+
+.debit {
+  color: var(--danger);
+  font-family: var(--font-mono);
+}

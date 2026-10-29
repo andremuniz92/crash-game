@@ -34,6 +34,8 @@ export interface GameState {
    * mais novo para o mais antigo.
    */
   publishedHashes: PublishedHash[];
+  /** Conta as respostas de aposta e cash out do próprio jogador: a carteira aberta recarrega. */
+  ownOperations: number;
 }
 
 export interface PublishedHash {
@@ -61,6 +63,7 @@ export const initialGameState: GameState = {
   pending: { bet: false, cashOut: false },
   connection: 'connecting',
   publishedHashes: [],
+  ownOperations: 0,
 };
 
 /** As 20 rodadas do histórico e a atual. */
@@ -144,6 +147,7 @@ export function applyBetPlaced(
   return {
     ...state,
     balance,
+    ownOperations: state.ownOperations + 1,
     myBet:
       state.round?.id === roundId
         ? {
@@ -166,6 +170,7 @@ export function applyCashedOut(
   return {
     ...state,
     balance,
+    ownOperations: state.ownOperations + 1,
     myBet:
       state.myBet?.betId === betId
         ? {
