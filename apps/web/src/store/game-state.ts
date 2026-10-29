@@ -1,6 +1,8 @@
 import type {
+  CashOutResponse,
   CurrentRoundResponse,
   MyBetDto,
+  PlaceBetResponse,
   RoundBetDto,
   RoundDto,
   RoundHistoryItem,
@@ -19,6 +21,17 @@ export interface GameState {
   myBet: MyBetDto | null;
   /** Últimos crashes, do mais novo para o mais antigo. */
   history: RoundHistoryItem[];
+  /** O guest da sessão (D77); null antes de entrar. */
+  player: Player | null;
+  /** Saldo em centavos; null enquanto não se sabe. */
+  balance: number | null;
+  /** Ação em andamento: o botão fica desabilitado, inclusive nas retentativas (D78). */
+  pending: { bet: boolean; cashOut: boolean };
+}
+
+export interface Player {
+  playerId: string;
+  nickname: string;
 }
 
 /** O mesmo padrão do `GET /rounds/history`. */
@@ -29,7 +42,79 @@ export const initialGameState: GameState = {
   bets: [],
   myBet: null,
   history: [],
+  player: null,
+  balance: null,
+  pending: { bet: false, cashOut: false },
 };
+
+/** O guest entrou ou voltou (sessão restaurada), com o saldo conhecido. */
+export function signIn(
+  state: GameState,
+  player: Player,
+  balance: number,
+): GameState {
+  return { ...state, player, balance };
+}
+
+export function setBalance(state: GameState, balance: number): GameState {
+  return { ...state, balance };
+}
+
+/** Sessão apagada (401, D77): sai a conta; a rodada continua na tela. */
+export function signOut(state: GameState): GameState {
+  return { ...state, player: null, balance: null, myBet: null };
+}
+
+export function setPending(
+  state: GameState,
+  action: keyof GameState['pending'],
+  value: boolean,
+): GameState {
+  return { ...state, pending: { ...state.pending, [action]: value } };
+}
+
+/** Resposta do POST /bets: o myBet só se a aposta for da rodada na tela. */
+export function applyBetPlaced(
+  state: GameState,
+  response: PlaceBetResponse,
+): GameState {
+  const { betId, roundId, amount, balance } = response;
+  return {
+    ...state,
+    balance,
+    myBet:
+      state.round?.id === roundId
+        ? {
+            betId,
+            amount,
+            status: 'PENDING',
+            cashoutMultiplier: null,
+            payout: null,
+          }
+        : state.myBet,
+  };
+}
+
+/** Resposta do cash out: encerra o myBet do mesmo betId. */
+export function applyCashedOut(
+  state: GameState,
+  response: CashOutResponse,
+): GameState {
+  const { betId, multiplier, payout, balance } = response;
+  return {
+    ...state,
+    balance,
+    myBet:
+      state.myBet?.betId === betId
+        ? {
+            ...state.myBet,
+            status: 'CASHED_OUT',
+            cashoutMultiplier: multiplier,
+            payout,
+          }
+        : state.myBet,
+  };
+}
 
 /** O `GET /rounds/current` substitui rodada, apostas e myBet; o histórico fica. */
 export function applySnapshot(
@@ -83,6 +168,7 @@ export function applyMessage(state: GameState, message: WsMessage): GameState {
       // A mensagem não tem crashedAt; o serverTime é lido no envio, logo depois do crash.
       const crashedAt = message.serverTime;
       return {
+        ...state,
         round: {
           ...round,
           status: 'CRASHED',

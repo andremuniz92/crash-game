@@ -9,11 +9,17 @@ import type {
 } from '@crash/shared';
 import { describe, expect, it } from 'vitest';
 import {
+  applyBetPlaced,
+  applyCashedOut,
   applyMessage,
   applySnapshot,
   type GameState,
   HISTORY_LIMIT,
   initialGameState,
+  setBalance,
+  setPending,
+  signIn,
+  signOut,
 } from './game-state.js';
 
 const ROUND = '00000000-0000-4000-8000-0000000000a1';
@@ -98,12 +104,15 @@ const msg = {
 };
 
 describe('applySnapshot (D75)', () => {
-  it('G1: o estado inicial não tem rodada, apostas, myBet nem histórico', () => {
+  it('G1: o estado inicial não tem rodada, apostas, myBet, histórico, jogador nem saldo', () => {
     expect(initialGameState).toEqual({
       round: null,
       bets: [],
       myBet: null,
       history: [],
+      player: null,
+      balance: null,
+      pending: { bet: false, cashOut: false },
     });
   });
 
@@ -124,6 +133,7 @@ describe('applySnapshot (D75)', () => {
         serverTime: T0,
       };
       expect(applySnapshot(state({ history }), snapshot)).toEqual({
+        ...initialGameState,
         round,
         bets: snapshot.bets,
         myBet: snapshot.myBet,
@@ -333,5 +343,86 @@ describe('applyMessage: apostas (D71, D75)', () => {
       bets: [pending(bet(1), 'ana', 1_000)],
     });
     expect(applyMessage(before, msg.cashedOut(bet(9)))).toBe(before);
+  });
+});
+
+describe('estado da conta (D77, D78)', () => {
+  const ana = {
+    playerId: 'a0a0a0a0-0000-4000-8000-000000000001',
+    nickname: 'ana',
+  };
+
+  it('GR1: a resposta do POST /bets define o myBet só na rodada atual; o saldo muda sempre', () => {
+    const response = {
+      betId: bet(1),
+      roundId: ROUND,
+      amount: 1_000,
+      balance: 99_000,
+    };
+
+    const current = applyBetPlaced(
+      state({ round: betting(), balance: 100_000 }),
+      response,
+    );
+    expect(current.myBet).toEqual(myPending(bet(1), 1_000));
+    expect(current.balance).toBe(99_000);
+
+    const moved = applyBetPlaced(
+      state({ round: betting(OTHER), balance: 100_000 }),
+      response,
+    );
+    expect(moved.myBet).toBeNull();
+    expect(moved.balance).toBe(99_000);
+  });
+
+  it('GR2: a resposta do cash out encerra o myBet do mesmo betId e atualiza o saldo', () => {
+    const after = applyCashedOut(
+      state({
+        round: running(),
+        myBet: myPending(bet(1), 1_000),
+        balance: 99_000,
+      }),
+      { betId: bet(1), multiplier: 182, payout: 1_820, balance: 100_820 },
+    );
+
+    expect(after.myBet).toEqual({
+      ...myPending(bet(1), 1_000),
+      status: 'CASHED_OUT',
+      cashoutMultiplier: 182,
+      payout: 1_820,
+    });
+    expect(after.balance).toBe(100_820);
+  });
+
+  it('GR3: entrar define jogador e saldo; sair limpa jogador, saldo e myBet e mantém a rodada', () => {
+    const history = [{ id: OTHER, crashPoint: 150, crashedAt: T0 }];
+    const signedIn = signIn(state({ round: running(), history }), ana, 100_000);
+    expect(signedIn).toMatchObject({ player: ana, balance: 100_000 });
+    expect(setBalance(signedIn, 99_000).balance).toBe(99_000);
+    expect(setPending(signedIn, 'cashOut', true).pending).toEqual({
+      bet: false,
+      cashOut: true,
+    });
+
+    const out = signOut({ ...signedIn, myBet: myPending(bet(1), 1_000) });
+    expect(out).toMatchObject({ player: null, balance: null, myBet: null });
+    expect(out.round).toEqual(running());
+    expect(out.history).toEqual(history);
+  });
+
+  it('GR4: round:crashed e round:betting mantêm jogador, saldo e pending', () => {
+    const account = {
+      player: ana,
+      balance: 99_000,
+      pending: { bet: false, cashOut: true },
+    };
+    const crashed = applyMessage(
+      state({ round: running(), ...account }),
+      msg.crashed(),
+    );
+    expect(crashed).toMatchObject(account);
+
+    const next = applyMessage(crashed, msg.betting(OTHER));
+    expect(next).toMatchObject(account);
   });
 });
