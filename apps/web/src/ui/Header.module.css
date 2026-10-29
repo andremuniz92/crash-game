@@ -1,0 +1,47 @@
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px var(--gap);
+  padding: 12px var(--gap);
+  border-bottom: 1px solid var(--sky-line);
+  background: var(--sky);
+}
+
+.brand {
+  color: var(--amber);
+  font-size: 1.125rem;
+}
+
+.account {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 0 auto;
+}
+
+.nickname {
+  font-weight: 600;
+}
+
+.balance {
+  font-family: var(--font-mono);
+}
+
+.label {
+  color: var(--muted);
+  font-family: var(--font);
+}
+
+.connection {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.connection[data-connection='live'] {
+  color: var(--teal);
+}
+
+.connection[data-connection='waiting'] {
+  color: var(--danger);
+}
