@@ -52,6 +52,23 @@ export const initialGameState: GameState = {
   connection: 'connecting',
 };
 
+/**
+ * Mescla a resposta do GET /rounds/history com o que o WS já trouxe: sem
+ * duplicar a mesma rodada (o REST vence, com o crashedAt exato), do crash
+ * mais novo para o mais antigo, até 20.
+ */
+export function setHistory(
+  state: GameState,
+  items: RoundHistoryItem[],
+): GameState {
+  const byId = new Map(state.history.map((item) => [item.id, item]));
+  for (const item of items) byId.set(item.id, item);
+  const history = [...byId.values()]
+    .sort((a, b) => b.crashedAt - a.crashedAt)
+    .slice(0, HISTORY_LIMIT);
+  return { ...state, history };
+}
+
 export function setConnection(
   state: GameState,
   connection: ConnectionStatus,

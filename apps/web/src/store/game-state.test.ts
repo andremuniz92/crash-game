@@ -18,6 +18,7 @@ import {
   initialGameState,
   setBalance,
   setConnection,
+  setHistory,
   setPending,
   signIn,
   signOut,
@@ -434,5 +435,51 @@ describe('estado da conta (D77, D78)', () => {
 
     const next = applyMessage(crashed, msg.betting(OTHER));
     expect(next).toMatchObject(account);
+  });
+});
+
+describe('setHistory (REST e WS)', () => {
+  const item = (n: number, crashedAt: number) => ({
+    id: `00000000-0000-4000-8000-0000000002${String(n).padStart(2, '0')}`,
+    crashPoint: 100 + n,
+    crashedAt,
+  });
+
+  it('HI1: a resposta do GET /rounds/history preenche do mais novo para o mais antigo', () => {
+    const response = [item(3, 3_000), item(2, 2_000), item(1, 1_000)];
+    expect(setHistory(initialGameState, response).history).toEqual(response);
+  });
+
+  it('HI2: o WS chegou antes da carga com a mesma rodada: uma entrada, com o crashedAt do REST', () => {
+    const viaWs = applyMessage(state({ round: running() }), msg.crashed());
+    expect(viaWs.history).toHaveLength(1);
+    const fromRest = { id: ROUND, crashPoint: 235, crashedAt: T0 + 24_990 };
+
+    const merged = setHistory(viaWs, [fromRest, item(1, T0 - 1_000)]);
+
+    expect(merged.history).toEqual([fromRest, item(1, T0 - 1_000)]);
+  });
+
+  it('HI3: o WS chega depois da carga: a rodada nova entra no topo, uma vez', () => {
+    const loaded = setHistory(state({ round: running() }), [
+      item(1, T0 - 1_000),
+    ]);
+    const after = applyMessage(loaded, msg.crashed());
+
+    expect(after.history.map((h) => h.id)).toEqual([ROUND, item(1, 0).id]);
+  });
+
+  it('HI4: a mescla respeita o limite de 20 e a ordem por crashedAt', () => {
+    const viaWs = state({ history: [item(30, 30_000), item(5, 5_000)] });
+    const response = Array.from({ length: 20 }, (_, i) =>
+      item(i + 10, (i + 10) * 1_000),
+    ).reverse();
+
+    const merged = setHistory(viaWs, response).history;
+
+    expect(merged).toHaveLength(20);
+    expect(merged[0]?.id).toBe(item(30, 0).id);
+    const times = merged.map((h) => h.crashedAt);
+    expect(times).toEqual([...times].sort((a, b) => b - a));
   });
 });
