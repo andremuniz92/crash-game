@@ -34,6 +34,11 @@ const MESSAGES: Record<ClientErrorCode, string> = {
     'Esta operação já foi enviada com outros dados. Tente de novo.',
 };
 
+/** A mensagem de um código da tabela, para quem valida antes de chamar a API. */
+export function messageFor(code: ClientErrorCode): string {
+  return MESSAGES[code];
+}
+
 /** Texto para o jogador; a mensagem do servidor nunca é exibida. */
 export function errorMessage(error: unknown): string {
   if (error instanceof NetworkError) {
