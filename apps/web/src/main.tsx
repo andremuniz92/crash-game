@@ -5,6 +5,7 @@ import './ui/tokens.css';
 import './ui/base.css';
 import { createActions } from './app/actions.js';
 import { GameProvider } from './app/game-context.js';
+import { whenLive } from './app/when-live.js';
 import { createSessionStorage, type KeyValueStorage } from './app/session.js';
 import { readWebConfig } from './config.js';
 import { createApiClient } from './net/api-client.js';
@@ -95,6 +96,7 @@ if (import.meta.env.DEV) {
 }
 
 void actions.restoreSession();
+whenLive(store, () => void actions.loadHistory());
 connection.start();
 
 const container = document.getElementById('root');

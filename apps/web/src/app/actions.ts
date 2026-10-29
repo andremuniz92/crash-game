@@ -5,6 +5,7 @@ import {
   applyBetPlaced,
   applyCashedOut,
   type GameState,
+  setHistory,
   setPending,
   signIn,
   signOut,
@@ -25,6 +26,8 @@ export interface Actions {
   restoreSession(): Promise<void>;
   placeBet(amount: number): Promise<ActionResult>;
   cashOut(): Promise<ActionResult>;
+  /** GET /rounds/history mesclado ao que o WS trouxe; falha de rede não apaga nada. */
+  loadHistory(): Promise<void>;
   /**
    * Para a conexão (D76): busca o snapshot sem aplicar na store, porque a
    * conexão aplica na ordem certa e descarta GET de conexão antiga. Rejeita,
@@ -169,6 +172,15 @@ export function createActions({
         );
         update((state) => applyCashedOut(state, response));
       });
+    },
+
+    async loadHistory() {
+      try {
+        const items = await api.history();
+        update((state) => setHistory(state, items));
+      } catch {
+        // Fica o que já havia; a próxima chegada a live tenta de novo.
+      }
     },
 
     async fetchSnapshot(signal) {

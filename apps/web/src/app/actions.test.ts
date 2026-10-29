@@ -383,3 +383,29 @@ describe('fetchSnapshot (D76, D77)', () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+describe('loadHistory', () => {
+  const crash = (n: number) => ({
+    id: `00000000-0000-4000-8000-0000000003${String(n).padStart(2, '0')}`,
+    crashPoint: 100 + n,
+    crashedAt: T0 - n * 1_000,
+  });
+
+  it('HI5: chama GET /rounds/history e aplica na store', async () => {
+    const { actions, store, calls } = setup([json(200, [crash(1), crash(2)])]);
+
+    await actions.loadHistory();
+
+    expect(calls[0]?.url).toBe(`${BASE}/rounds/history`);
+    expect(store.getState().history).toEqual([crash(1), crash(2)]);
+  });
+
+  it('HI5: falha de rede deixa o histórico como estava', async () => {
+    const { actions, store } = setup([offline]);
+    store.setState((state) => ({ ...state, history: [crash(3)] }), true);
+
+    await actions.loadHistory();
+
+    expect(store.getState().history).toEqual([crash(3)]);
+  });
+});
