@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/andremuniz92/crash-game/actions/workflows/ci.yml/badge.svg)](https://github.com/andremuniz92/crash-game/actions/workflows/ci.yml)
 
-**Status:** back-end completo (M0 a M3); front em desenvolvimento.
+**Status:** M0 a M4 prontos (back-end e base do front); cena PixiJS em desenvolvimento.
 
 Crash game multiplayer com rodada global, usando créditos fictícios. Projeto de portfólio.
 As decisões de arquitetura estão no [CLAUDE.md](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
@@ -23,8 +23,8 @@ As decisões de arquitetura estão no [CLAUDE.md](./CLAUDE.md#4-decisões-regist
   [D54](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
 - **Testes que provam que pegam a falha.** Em cada fase, o código que protege uma regra foi removido
   de propósito para confirmar que o teste falha (mutação manual). [Testes](./CLAUDE.md#12-testes).
-- **372 testes:** 246 unitários, 85 de integração com Postgres real e 41 E2E por HTTP e WebSocket,
-  todos no CI. [D39, D40, D66](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
+- **773 testes:** 639 unitários e de componente, 85 de integração com Postgres real e 49 E2E por
+  HTTP e WebSocket, todos no CI. [D39, D40, D66, D82](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
 
 ## Como foi desenvolvido
 
@@ -169,22 +169,55 @@ no erro. A `WEB_ORIGIN` precisa ser uma origem pura, como o navegador manda no h
 (`http://localhost:5173`, sem barra final nem caminho); se ela vier em outra forma, o erro mostra a
 forma esperada. Abrir o front em `127.0.0.1:5173` é outra origem e será recusado.
 
+### Front
+
+O `pnpm dev` sobe o front em `http://localhost:5173`, ligado à API em `http://localhost:3000`. Abra
+exatamente esse endereço: a API só aceita a origem da `WEB_ORIGIN` (D69, D70).
+
+| Variável       | Padrão                           | O que é                                                   |
+| -------------- | -------------------------------- | --------------------------------------------------------- |
+| `VITE_API_URL` | `http://localhost:3000` (só dev) | Origem da API; o WebSocket fica na mesma origem, em `/ws` |
+
+O `vite build` de produção (e o `pnpm build` da raiz) falha sem `VITE_API_URL` ou com uma origem
+inválida, em vez de gerar uma página que só quebra ao abrir (D73, D85). O Vite lê o `.env` da raiz
+e só expõe ao front as variáveis com prefixo `VITE_`.
+
+O navegador precisa de contexto seguro (HTTPS ou `localhost`): é nele que existem o
+`crypto.randomUUID`, que gera as `Idempotency-Key`, e o `crypto.subtle`, que confere o SHA-256 da
+seed. Fora dele, a verificação aparece como indisponível.
+
+**Testando num celular.** O front abre pelo IP da rede local (o Vite escuta em `0.0.0.0`), mas essa
+é outra origem, e a API recusa. Para testar: troque temporariamente a `WEB_ORIGIN` no `.env` para
+`http://<IP>:5173`, reinicie o `pnpm dev` e, ao terminar, volte para `http://localhost:5173`. Em
+HTTP pelo IP não há contexto seguro: a verificação fica indisponível, e o `crypto.randomUUID` também
+não existe, então apostar exige HTTPS (um túnel, por exemplo). Como medir os 60 fps no celular é
+uma decisão do M5.
+
+**Linha de base do bundle (fim do M4).** `vite build` com `VITE_API_URL` definida; é o "antes" das
+medições da seção 11.3, que ficam para o M7.
+
+| Arquivo      | Tamanho   | gzip     |
+| ------------ | --------- | -------- |
+| JS           | 249,01 kB | 79,04 kB |
+| CSS          | 7,35 kB   | 2,05 kB  |
+| `index.html` | 0,51 kB   | 0,31 kB  |
+
 ### Scripts da raiz
 
-| Script              | O que faz                                           |
-| ------------------- | --------------------------------------------------- |
-| `pnpm dev`          | Ambiente de desenvolvimento completo                |
-| `pnpm build`        | Build de todos os pacotes                           |
-| `pnpm typecheck`    | `tsc --noEmit` em todos os pacotes                  |
-| `pnpm test`         | Vitest em todos os pacotes                          |
-| `pnpm lint`         | oxlint (com tipos) no monorepo inteiro              |
-| `pnpm format`       | Prettier em tudo                                    |
-| `pnpm format:check` | Confere a formatação sem alterar nada (usado no CI) |
+| Script              | O que faz                                                 |
+| ------------------- | --------------------------------------------------------- |
+| `pnpm dev`          | Ambiente de desenvolvimento completo                      |
+| `pnpm build`        | Build de todos os pacotes (o do web exige `VITE_API_URL`) |
+| `pnpm typecheck`    | `tsc --noEmit` em todos os pacotes                        |
+| `pnpm test`         | Vitest em todos os pacotes                                |
+| `pnpm lint`         | oxlint (com tipos) no monorepo inteiro                    |
+| `pnpm format`       | Prettier em tudo                                          |
+| `pnpm format:check` | Confere a formatação sem alterar nada (usado no CI)       |
 
 Cada pacote tem os mesmos scripts, restritos a ele (`pnpm --filter @crash/web lint`, por exemplo).
 
 O CI (`.github/workflows/ci.yml`) roda, em cada push e pull request: install com
-`--frozen-lockfile`, build do `shared`, format, lint, typecheck e testes. Um segundo job roda os
+`--frozen-lockfile`, build do `shared`, format, lint, typecheck, testes e o build do web. Um segundo job roda os
 testes de integração, os E2E e o `migration:check` contra um Postgres 18 em service container.
 
 ## API
@@ -251,9 +284,31 @@ do crash ou a seed. O `round:tick` serve só para sincronizar: o cliente calcula
 cada frame com a fórmula do `@crash/shared`. O servidor manda ping a cada `WS_HEARTBEAT_MS` e
 derruba a conexão que não responder.
 
-**Verificando uma rodada.** Depois do crash, `GET /rounds/:id/verify` devolve a seed. Qualquer
-pessoa pode conferir que `sha256(serverSeed)` é o `seedHash` publicado no `round:betting` e
-recalcular o crash point com a fórmula da seção 7.2 do CLAUDE.md.
+### Verificando uma rodada
+
+Depois do crash, `GET /rounds/:id/verify` devolve a seed. Qualquer pessoa pode conferir duas coisas,
+sem depender do front:
+
+1. **A seed estava fixada antes da rodada:** o SHA-256 da seed (o texto hex de 64 caracteres, em
+   UTF-8) é o `seedHash` publicado no `round:betting`.
+
+   ```sh
+   printf '%s' '<serverSeed>' | sha256sum
+   ```
+
+2. **O crash point sai da seed:** HMAC-SHA256 com a seed como chave e o id da rodada como mensagem
+   (D23); os 13 primeiros caracteres hex viram `h`, e a fórmula da
+   [seção 7.2](./CLAUDE.md#72-crash-point-provably-fair-inspirado-no-modelo-do-bustabit) dá o crash
+   point.
+
+   ```sh
+   printf '%s' '<roundId>' | openssl dgst -sha256 -hmac '<serverSeed>'
+   # ou o cálculo completo, com divisão inteira exata (D27) e o teto (D24):
+   node -e 'const c=require("node:crypto");const[s,id]=process.argv.slice(1);const h=BigInt("0x"+c.createHmac("sha256",s).update(id).digest("hex").slice(0,13));const e=2n**52n;let x=h%33n===0n?100n:(100n*e-h)/(e-h);if(x>100000000n)x=100000000n;console.log((Number(x)/100).toFixed(2)+"x")' '<serverSeed>' '<roundId>'
+   ```
+
+O painel de verificação do front faz o passo 1 no navegador (Web Crypto), contra o hash que ele viu
+publicado antes do crash (D86); o passo 2 não é recalculado no front (D80).
 
 ## Limitações conhecidas
 
@@ -277,20 +332,33 @@ recalcular o crash point com a fórmula da seção 7.2 do CLAUDE.md.
 - **CORS e a origem do WebSocket não são autenticação** (D69, D70). Eles impedem que uma página de
   outra origem use a API pelo navegador do jogador, mas um cliente fora do navegador manda o
   `Origin` que quiser.
+- **O token do guest fica no `localStorage`** (D77). Recarregar mantém a sessão, mas um XSS no
+  front leria o token, que não expira. Mitigações: o React escapa o texto, não há
+  `dangerouslySetInnerHTML` e o nickname é restrito (D59); uma CSP no deploy fica para o M7.
+- **O vigia de silêncio do WebSocket depende do `PAUSE_MS`** (D76). O cliente não conhece a pausa
+  entre rodadas: com `PAUSE_MS` acima de cerca de 25 s, ele reconectaria à toa (sem dano, porque a
+  ressincronização reconstrói o estado).
+- **A verificação no front só prova a fixação da seed para as rodadas que a página viu antes do
+  crash** (D86). Para uma rodada que só apareceu pelo histórico, o painel avisa e compara com o hash
+  informado na própria verificação.
+- **Favicon só em SVG.** Chrome, Edge e Firefox usam o SVG; o Safari pode pedir `/favicon.ico` e
+  mostrar um 404 no console.
 
 ## Versões
 
-| Ferramenta | Versão |
-| ---------- | ------ |
-| Node.js    | 24     |
-| pnpm       | 11.24  |
-| TypeScript | 6.0    |
-| NestJS     | 12.2   |
-| MikroORM   | 7.2    |
-| React      | 19.3   |
-| Zustand    | 5.0    |
-| Vite       | 8.3    |
-| Vitest     | 5.0    |
-| PostgreSQL | 18     |
-| oxlint     | 1.89   |
-| Prettier   | 3.9    |
+| Ferramenta              | Versão |
+| ----------------------- | ------ |
+| Node.js                 | 24     |
+| pnpm                    | 11.24  |
+| TypeScript              | 6.0    |
+| NestJS                  | 12.2   |
+| MikroORM                | 7.2    |
+| React                   | 19.3   |
+| Zustand                 | 5.0    |
+| Vite                    | 8.3    |
+| Vitest                  | 5.0    |
+| jsdom                   | 30.1   |
+| Testing Library (React) | 16.3   |
+| PostgreSQL              | 18     |
+| oxlint                  | 1.89   |
+| Prettier                | 3.9    |

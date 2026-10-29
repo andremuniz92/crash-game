@@ -142,6 +142,8 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D82 | **Testes do front:** Vitest com ambiente `node` por padrão e jsdom só nos testes de componente; `@testing-library/react`, `@testing-library/dom` e `@testing-library/user-event`, sem jest-dom; fakes próprios (`fakeFetch`, `FakeWebSocket`, `random` e `now` injetados), sem MSW; backoff e vigia com `vi.useFakeTimers` | A lógica testa rápido sem DOM. Injeção no lugar de interceptar a rede é o mesmo padrão das portas do back, sem dependência. Cada dependência nova é justificada no commit que a instala |
 | D83 | **Pastas do `apps/web/src`:** `app/` (composition root, ações e sessão), `net/` (REST, conexão WS, backoff, relógio, erros), `store/`, `ui/`, `game/` (palco 1280×720 e, no M5, o Pixi), `format/` e `config.ts`. Só o `app/` liga `net/` e `store/`; a UI chama as ações do `app/` | As ações precisam de um dono que não seja a store nem os componentes (11.1) |
 | D84 | **Sem E2E de navegador no M4.** O front é coberto por testes com fakes, pelos contratos tipados do `@crash/shared` e por roteiro manual. O Playwright é decidido no M6/M7, rodando no host e no CI | Os binários dos navegadores não cabem no AI Jail sem afrouxar a D18, e o E2E exigiria API, banco e front de pé |
+| D85 | **O build de produção do web falha sem `VITE_API_URL`.** O `vite.config.ts` chama `assertBuildEnv(loadEnv(...), mode)` no `vite build`; em `production`, ela reusa o `readWebConfig` e lança sem a variável ou com origem inválida. O CI define `VITE_API_URL` no passo de build. Completa a D73, cujo texto já pedia a falha no build | Sem a checagem, o `readWebConfig` só rodava no navegador: o build passava e a página publicada quebrava ao abrir. Um erro de deploy deve aparecer no build, não para o jogador |
+| D86 | **A verificação compara a seed com o hash publicado antes do crash.** A store guarda o `seedHash` de cada rodada vista ao vivo (até 21: as 20 do histórico e a atual), vindo do `round:betting` ou de um snapshot com a rodada em `BETTING` ou `RUNNING`. Snapshot com a rodada já em `CRASHED` e o `round:crashed` não contam, porque o hash chega junto com a seed. Para uma rodada não vista ao vivo, o painel compara com o hash da própria resposta do `verify` e avisa que isso não prova a fixação. O painel diz o que a conferência prova e aponta o comando HMAC do README para o crash point (D80) | Comparar com o hash da mesma resposta que traz a seed não prova nada: um servidor desonesto mandaria os dois combinados. A garantia do provably fair (D7) é a seed bater com o hash anunciado antes das apostas |
 
 ### Decisões pendentes
 
@@ -500,10 +502,10 @@ Estimativa total: ~43–45 h (MVP sem M6: ~34–36 h).
 - [x] Testes de concorrência e E2E
 
 ### M4 — Base do front (9 a 11 h)
-- [ ] Vite + React + TypeScript consumindo `shared`
-- [ ] Clientes REST e WS (reconexão, ressincronização, offset do relógio)
-- [ ] Store com Zustand
-- [ ] UI: painel de aposta, carteira, lista de jogadores, histórico
+- [x] Vite + React + TypeScript consumindo `shared`
+- [x] Clientes REST e WS (reconexão, ressincronização, offset do relógio)
+- [x] Store com Zustand
+- [x] UI: painel de aposta, carteira, lista de jogadores, histórico
 - [x] Regras do nickname (`^[A-Za-z0-9_-]{3,16}$`, aparado) movidas da api para o `@crash/shared`, usadas pelo `parseGuestBody` e pelo formulário do front (como a D36)
 - [x] CORS na API liberado só para a origem do front, lida da configuração (variável nova no `readAppConfig`), nunca `*`; a conexão do WebSocket aceita só essa mesma origem (D69, D70)
 - [x] `betId` público em `bet:placed`, `bet:cashed_out` e no `RoundBetDto`, com teste de que o `playerId` não aparece (D71)
