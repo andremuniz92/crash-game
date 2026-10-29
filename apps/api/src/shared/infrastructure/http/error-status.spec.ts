@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { CLIENT_ERROR_CODES } from '@crash/shared';
 import { ERROR_STATUS } from './error-status.js';
 
 /*
@@ -38,6 +39,15 @@ describe('ERROR_STATUS (D58)', () => {
       [...table].filter((code) => !source.has(code)),
       'códigos da tabela que não existem em src/',
     ).toEqual([]);
+  });
+
+  it('EC1: os códigos 4xx são exatamente os CLIENT_ERROR_CODES do @crash/shared', () => {
+    const clientErrors = Object.entries(ERROR_STATUS)
+      .filter(([, status]) => status < 500)
+      .map(([code]) => code)
+      .sort();
+
+    expect([...CLIENT_ERROR_CODES].sort()).toEqual(clientErrors);
   });
 
   it('usa só os status previstos na D58', () => {
