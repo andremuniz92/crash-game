@@ -32,6 +32,7 @@ describe('App', () => {
 
     expect(screen.queryByLabelText('Nickname')).toBeNull();
     expect(screen.getByRole('banner').textContent).toContain('ana');
+    expect(screen.getByRole('region', { name: 'Aposta' })).toBeTruthy();
   });
 
   it('AP2: depois de um createGuest bem-sucedido, o formulário some sem recarregar', async () => {
@@ -62,7 +63,9 @@ describe('App', () => {
       document.querySelectorAll('[role="status"], [role="alert"]'),
     ).toHaveLength(0);
 
+    // A11: com o painel de aposta montado, continua uma só.
     act(() => store.setState((state) => signIn(state, ana, 100_000), true));
+    expect(screen.getByRole('region', { name: 'Aposta' })).toBeTruthy();
     expect(liveRegions()).toHaveLength(1);
   });
 });

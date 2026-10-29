@@ -2,6 +2,7 @@ import styles from './App.module.css';
 import { useGameState } from './app/game-context.js';
 import { GameStage } from './game/GameStage.js';
 import { MultiplierText } from './game/MultiplierText.js';
+import { BetPanel } from './ui/BetPanel.js';
 import { GuestForm } from './ui/GuestForm.js';
 import { Header } from './ui/Header.js';
 import { RoundAnnouncer } from './ui/RoundAnnouncer.js';
@@ -20,11 +21,7 @@ export function App() {
           </GameStage>
         </section>
         <aside className={styles.panel}>
-          {signedIn ? (
-            <p className={styles.soon}>O painel de aposta chega em breve.</p>
-          ) : (
-            <GuestForm />
-          )}
+          {signedIn ? <BetPanel /> : <GuestForm />}
         </aside>
       </main>
       <RoundAnnouncer />

@@ -25,11 +25,6 @@
   background: var(--sky);
 }
 
-.soon {
-  margin: 0;
-  color: var(--muted);
-}
-
 @media (min-width: 768px) {
   .main {
     grid-template-columns: minmax(0, 1fr) 320px;
