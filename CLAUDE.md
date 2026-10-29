@@ -144,6 +144,19 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D84 | **Sem E2E de navegador no M4.** O front é coberto por testes com fakes, pelos contratos tipados do `@crash/shared` e por roteiro manual. O Playwright é decidido no M6/M7, rodando no host e no CI | Os binários dos navegadores não cabem no AI Jail sem afrouxar a D18, e o E2E exigiria API, banco e front de pé |
 | D85 | **O build de produção do web falha sem `VITE_API_URL`.** O `vite.config.ts` chama `assertBuildEnv(loadEnv(...), mode)` no `vite build`; em `production`, ela reusa o `readWebConfig` e lança sem a variável ou com origem inválida. O CI define `VITE_API_URL` no passo de build. Completa a D73, cujo texto já pedia a falha no build | Sem a checagem, o `readWebConfig` só rodava no navegador: o build passava e a página publicada quebrava ao abrir. Um erro de deploy deve aparecer no build, não para o jogador |
 | D86 | **A verificação compara a seed com o hash publicado antes do crash.** A store guarda o `seedHash` de cada rodada vista ao vivo (até 21: as 20 do histórico e a atual), vindo do `round:betting` ou de um snapshot com a rodada em `BETTING` ou `RUNNING`. Snapshot com a rodada já em `CRASHED` e o `round:crashed` não contam, porque o hash chega junto com a seed. Para uma rodada não vista ao vivo, o painel compara com o hash da própria resposta do `verify` e avisa que isso não prova a fixação. O painel diz o que a conferência prova e aponta o comando HMAC do README para o crash point (D80) | Comparar com o hash da mesma resposta que traz a seed não prova nada: um servidor desonesto mandaria os dois combinados. A garantia do provably fair (D7) é a seed bater com o hash anunciado antes das apostas |
+| D87 | **Coreografia da cena (tema da pipa, D81).** Pipa procedural em `Graphics` (losango, varetas, rabiola), fio da âncora (canto inferior esquerdo) até a pipa e rastro com a curva do multiplicador; sem assets externos. O céu é o gradiente CSS do palco, com o canvas transparente. Cores em constantes TS (`game/scene/palette.ts`, `0xRRGGBB`, com os nomes dos tokens), e um teste falha se alguma divergir do `tokens.css`. **Câmera:** eixos lineares (x = tempo decorrido, y = multiplicador), janela `xMax = max(8 s, elapsed / 0,8)` e `yMax = max(2,00x, 1 + (m − 1) / 0,75)`, que só cresce durante a rodada; a pipa fica dentro de 80% × 75% da área útil. **BETTING:** pipa pousada perto da âncora, balanço em função do `serverNow` e barra do tempo restante de apostas, sem rastro. **RUNNING:** pipa em `project(elapsed, displayMultiplier)`, fio em curva e rastro desde `t = 0`. **CRASHED:** o fio se rompe e recolhe, a pipa gira, cai e some em 1,2 s, com o progresso `max(0, serverNow − crashedAt)`; a posição congela em `timeToCrash(crashPoint)` | Tema original (11.2). Com a animação em função do `crashedAt`, quem chega por snapshot depois do crash vê o quadro final, e a cena não guarda estado de tempo. Congelar no crash point cumpre o item do backlog de corrigir o multiplicador exibido (D68, D11). As cores em TS evitam ler variáveis CSS no mount, que o jsdom não resolve; o teste impede que as duas fontes divirjam |
+| D88 | **Lógica pura separada do Pixi.** `game/scene/` é puro e roda no ambiente `node`: `camera`/`project` e `writeFrame(out, round, serverNow, { reducedMotion })`, que preenche um `FrameModel` reutilizável (fase, pose da pipa, fio, rastro num `Float32Array` de 48 pontos, paleta). `game/pixi/pixi-scene.ts` é o adaptador fino: cria a árvore uma vez, `draw(model)` só atribui propriedades e redesenha os `Graphics`, `destroy()` destrói tudo. O `GameCanvas` cuida do ciclo de vida, com renderer e carregador injetáveis. Os testes do adaptador usam objetos reais do Pixi sem renderer se funcionarem no Vitest em `node` (spike da F4); se não, uma fábrica fake. Pixels e WebGL ficam no roteiro manual | O jsdom não tem WebGL. Tudo o que é número fica testado sem DOM; o adaptador fica fino o bastante para que o roteiro manual cubra o resto |
+| D89 | **Um relógio só.** `createFrameLoop` (`app/`), criado no `main.tsx` e entregue pelo `GameProvider`: um único `requestAnimationFrame`, que lê o `serverNow()` uma vez por frame e chama os assinantes com o mesmo valor; para quando não há assinantes; um assinante que lança vai para o log sem parar os outros. O `MultiplierText` assina o loop. O Pixi roda sem ticker: `autoDetectRenderer` + `Container` + `renderer.render(stage)` dentro do loop, em vez de `Application` | Texto e pipa concordam no mesmo frame; o texto anima antes de o Pixi carregar e depois de ele falhar; os testes seguem com o `fakeFrames`. Dois laços (rAF próprio e ticker) leriam o relógio em instantes diferentes |
+| D90 | **Multiplicador em texto DOM sobre o canvas**, não em `Text` do Pixi. O `MultiplierText` continua `aria-hidden`, e o `RoundAnnouncer` continua sendo a única região `aria-live`. O canvas recebe `aria-hidden="true"`, `role="presentation"` e `pointer-events: none` | Funciona sem WebGL e com o chunk do Pixi ainda carregando, fica nítido em qualquer escala e não rasteriza textura de fonte a cada frame. A acessibilidade não muda em relação ao M4, e o canvas nunca captura cliques do painel |
+| D91 | **Ciclo de vida da cena.** O `useEffect` chama `mountScene(host, deps)`, que devolve um `dispose()` síncrono. O init assíncrono roda com uma flag `disposed`: se o `dispose()` vier antes, o renderer é destruído assim que o init resolver, e o canvas nunca entra no DOM. O `dispose()` cancela as assinaturas do frame loop, da store, do `matchMedia` e dos eventos de contexto, e chama `destroy({ removeView: true }, { children: true, texture: true, textureSource: true, context: true })`. A store é lida por `subscribe` (D10): a assinatura guarda a rodada mais recente, que o frame usa | No Pixi 8, `destroy()` antes do init resolver lança erro (o `renderer` ainda não existe). O StrictMode de dev monta duas vezes: por um instante existem dois contextos WebGL, o que é aceito |
+| D92 | **Renderer e falhas.** `preference: ['webgl', 'canvas']`, sem WebGPU. Init rejeitado ou chunk da cena que falhou na rede: sem canvas, com o texto e o painel funcionando e o erro no `console.warn`, sem mensagem na tela. `webglcontextlost` para de desenhar e esconde o canvas; `webglcontextrestored` volta a desenhar | O Pixi 8 tem renderer Canvas 2D com `Graphics`, que cobre quem não tem WebGL. O WebGPU é menos maduro em celular e seria mais um chunk. O jogo continua inteiro sem a cena, então não há o que avisar |
+| D93 | **Resolução, antialias, aba oculta e movimento reduzido.** `resolution = clamp(fitScale × min(devicePixelRatio, 2), 0,25, 2)`: backing de no máximo 2560×1440. O canvas mantém o CSS em 1280×720 (`autoDensity: false`), o `GameStage` publica a escala, e escala 0 não redimensiona. Resize anterior ao init é guardado e aplicado quando o renderer existir. O `antialias` é decidido uma vez, no init, pelo DPR daquele momento (ligado só com `min(DPR, 2) < 2`). Sem handler de `visibilitychange`. Com `prefers-reduced-motion`: sem balanço e sem a queda (quadro final direto); a pipa continua subindo | O palco é escalado por `transform`: com `resolution = DPR`, um celular com DPR 3 desenharia 3840×2160 para mostrar ~1080 px físicos, e um monitor grande com DPR 2 passaria de 5K. O antialias é opção de criação do contexto e não muda depois. O rAF já para em aba oculta, e o frame é função do `serverNow`, então não há salto na volta. A subida da pipa é a informação do jogo, não decoração |
+| D94 | **Cena por import dinâmico.** O `GameCanvas` carrega o adaptador e o `pixi.js` com `import()`; o primeiro render (painel, texto, histórico) não espera. O carregamento é medido por FCP/LCP e pelas marcas `app:first-render` (texto visível e jogável) e `scene:first-frame`; a meta de < 2 s em 4G (11.3) vale para o `app:first-render` | O Pixi é maior que o bundle inteiro do M4 (79 kB gzip). No chunk principal, ele atrasaria a primeira tela jogável por algo que é só visual |
+| D95 | **Nenhum objeto Pixi por frame.** `Container` e `Graphics` nascem na montagem; elemento oculto fica com `visible = false` em vez de sair da árvore. Fio e rastro usam `Graphics.clear()` e redesenho com os pontos do buffer pré-alocado. `FrameModel` e buffer são reutilizados (teste de identidade) | Cumpre a 11.3. O `clear()` reconstrói a geometria, mas não cria objetos; se o profiling mostrar pausas de GC, a alternativa é `MeshRope` com pontos mutáveis |
+| D96 | **`Idempotency-Key` sem `crypto.randomUUID`.** `app/idempotency-key.ts` monta um UUID v4 (RFC 9562) com 16 bytes de `crypto.getRandomValues`. Um teste de varredura impede `randomUUID` em `apps/web/src` fora dos testes. Revisa a D78 só na origem da chave | O `randomUUID` só existe em contexto seguro; o `getRandomValues` existe também em HTTP. Assim dá para apostar abrindo o front pelo IP da rede local (D98). A api aceita qualquer UUID canônico |
+| D97 | **Medição (11.3).** Carregamento: Lighthouse mobile do Chrome (Slow 4G + CPU 4×) e DevTools Network "Fast 4G", sobre `vite build` + `vite preview`, com a API de pé e cache desligado; mediana de 5 execuções. fps: medidor próprio ligado por `?fps`, num chunk à parte carregado só com o parâmetro, que funciona no build de produção; usa os timestamps do frame loop e mostra média, "1% low" e frames acima de 50 ms. Duas medições: rodada curta (~10 s) e longa (> 60 s). Antes e depois de duas otimizações: import dinâmico (D94) e resolução pela escala do palco (D93), com a versão simples commitada antes de cada uma | Mede-se o build de produção, não o dev. O Firefox não tem CPU throttling nem Lighthouse, então a medição de 4G usa o Chrome. O medidor próprio funciona em Android e iOS, sem depender de profiler remoto. Com a versão simples no histórico, o antes e depois fica verificável |
+| D98 | **Front no celular pela rede local (opção A).** Para medir, troque temporariamente `WEB_ORIGIN` para `http://<IP>:5173` e `VITE_API_URL` para `http://<IP>:3000`, e sirva o build com `vite preview --host --port 5173 --strictPort` (com o dev do web parado). Ao terminar, volte para `localhost`. Pelo IP em HTTP não há `crypto.subtle`: a verificação aparece como indisponível (D80, D86), e o resto do jogo funciona (D96) | A D69 e a D70 ficam intactas, sem código novo, e a rede local dá latência estável. Lista de origens mudaria a D69, e túnel ou certificado local trariam ferramenta nova e latência de terceiros. O HTTPS de verdade chega com o deploy (M7). A 5173 já é publicada pelo jail |
+| D99 | **`pixi.js` (8.22) só no `apps/web`**, fora do catalog (D17). Na instalação, nenhuma dependência transitiva roda script de build sem registro na D46 | Só o front usa. O catalog é para versões compartilhadas entre pacotes |
 
 ### Decisões pendentes
 
@@ -180,7 +193,7 @@ crash-game/
 │           ├── net/                 # conexão WS (reconexão, ressincronização), cliente REST, relógio
 │           ├── store/               # Zustand
 │           ├── ui/                  # componentes React
-│           ├── game/                # palco 1280×720; PixiJS (M5): CrashScene e objetos da cena
+│           ├── game/                # palco 1280×720, frame da cena (scene/, puro) e adaptador PixiJS (pixi/)
 │           └── format/              # créditos e multiplicador: formatação e leitura
 ├── packages/
 │   └── shared/                      # tipos de eventos WS, DTOs, multiplierAt(), constantes
@@ -424,11 +437,11 @@ criar rodada (BETTING, 10 s) → start() → ticks a cada 100 ms → em crashAt:
 | `net/` | Conecta o WS, reconecta com backoff exponencial, chama a API REST, calcula o offset do relógio com base em `serverTime` | Lógica de UI |
 | `store/` | Guarda rodada, saldo, aposta do jogador, lista de jogadores e histórico | Chamar a rede diretamente a partir dos componentes |
 | `ui/` | Painel de aposta e cash out, carteira, lista de jogadores, histórico de multiplicadores | Desenhar o jogo |
-| `game/` | `CrashScene`: curva, objeto que sobe, explosão, texto do multiplicador | Re-renderizar via React |
+| `game/` | Cena: curva, pipa que sobe, crash (lógica pura em `scene/`, adaptador Pixi em `pixi/`, D88); texto do multiplicador em DOM sobre o canvas (D90) | Re-renderizar via React |
 
 ### 11.2 Regras
 
-- O Pixi é criado em `useEffect` no componente `<GameCanvas />`, com `app.destroy()` no cleanup. A cena se inscreve na store com `store.subscribe` e atualiza os próprios objetos.
+- O Pixi é criado em `useEffect` no componente `<GameCanvas />`, com `destroy()` completo do renderer no cleanup, mesmo se o init assíncrono ainda não resolveu (D91). A cena se inscreve na store com `store.subscribe` e atualiza os próprios objetos a cada frame do loop único (D89).
 - A cada frame, o multiplicador exibido é `multiplierAt(serverNow − startedAt)`, onde `serverNow = performance.now() + clockOffset` (D74). Os ticks do servidor só corrigem desvios.
 - **Ao reconectar:** chama `GET /rounds/current` e reconstrói o estado antes de voltar a processar eventos.
 - O botão de cash out fica desabilitado enquanto a requisição está em andamento. A `Idempotency-Key` é gerada uma vez por clique; as retentativas automáticas reutilizam a mesma (D78).
@@ -464,7 +477,7 @@ Testes de concorrência obrigatórios:
 
 ## 13. Backlog por etapa
 
-Estimativa total: ~43–45 h (MVP sem M6: ~34–36 h).
+Estimativa total: ~47–51 h (MVP sem M6: ~38–42 h).
 
 ### M0 — Setup (3 h)
 - [x] Monorepo pnpm com `apps/api`, `apps/web` e `packages/shared`
@@ -510,14 +523,19 @@ Estimativa total: ~43–45 h (MVP sem M6: ~34–36 h).
 - [x] CORS na API liberado só para a origem do front, lida da configuração (variável nova no `readAppConfig`), nunca `*`; a conexão do WebSocket aceita só essa mesma origem (D69, D70)
 - [x] `betId` público em `bet:placed`, `bet:cashed_out` e no `RoundBetDto`, com teste de que o `playerId` não aparece (D71)
 
-### M5 — Cena PixiJS (6 h)
-- [ ] `<GameCanvas />` com ciclo de vida correto
-- [ ] Curva do multiplicador e objeto subindo
-- [ ] Texto do multiplicador
-- [ ] Animação do crash
-- [ ] Escala responsiva
-- [ ] Ao receber `round:crashed`, a cena corrige o multiplicador exibido para o crash point exato: o tick (D68) e o cálculo local (D11) podem passar um pouco dele
-- [ ] Decidir como abrir o front num celular real para medir os 60 fps: pelo IP da rede local ou por túnel HTTPS. Os dois esbarram na origem única (D69, D70) e no contexto seguro exigido por `crypto.randomUUID` e `crypto.subtle`
+### M5 — Cena PixiJS (11 a 13 h)
+- [x] Decidir como abrir o front num celular real para medir os 60 fps (D98: pelo IP da rede local, trocando `WEB_ORIGIN` e `VITE_API_URL`)
+- [ ] `Idempotency-Key` gerada com `crypto.getRandomValues`, com teste de que não depende do `crypto.randomUUID` (D96); roteiro do celular no README com `WEB_ORIGIN` e `VITE_API_URL` pelo IP (D98)
+- [ ] Frame loop único dirigindo o texto e a cena (D89)
+- [ ] Modelo puro da cena: câmera, curva do multiplicador, pipa subindo, animação do crash, movimento reduzido e paleta conferida com o `tokens.css` (D87, D88)
+- [ ] Ao receber `round:crashed`, a cena congela no crash point exato: o tick (D68) e o cálculo local (D11) podem passar um pouco dele. O texto já faz isso desde o M4 (`displayMultiplier`); falta a pipa (D87)
+- [ ] Adaptador Pixi sem objeto criado por frame (D88, D95)
+- [ ] `<GameCanvas />` com ciclo de vida correto, falhas de contexto e texto do multiplicador em DOM sobre o canvas (D90, D91, D92)
+- [ ] Medidor de fps (`?fps`) e marcas de carregamento (D97)
+- [ ] Medição "antes" (bundle, Lighthouse, fps no celular)
+- [ ] Otimização 1: cena por import dinâmico (D94)
+- [ ] Otimização 2: escala responsiva com resolução pela escala do palco (D93)
+- [ ] Medição "depois" e README (linha de base do bundle, números de desempenho, limitações)
 
 ### M6 — Polimento (4 h)
 - [ ] Partículas no crash e no cash out
@@ -525,10 +543,10 @@ Estimativa total: ~43–45 h (MVP sem M6: ~34–36 h).
 - [ ] Teste em celular real e ajustes
 - [ ] Candidata a refatoração: a validação de origem pura está duplicada em `apps/web/src/config.ts` (`VITE_API_URL`, D73) e em `apps/api/src/shared/infrastructure/config/app-config.ts` (`WEB_ORIGIN`, D69); mover a função para o `@crash/shared`, com os testes das duas pontas continuando verdes
 
-### M7 — Entrega (5 h)
+### M7 — Entrega (4 h)
 - [ ] README: GIF de 10 s, arquitetura, decisões (link para esta seção 4), fluxos críticos, como rodar, limitações
 - [ ] Diagramas: contexto e fluxo de uma rodada
-- [ ] Medições de performance da seção 11.3, com antes e depois de pelo menos uma otimização
+- [ ] Repetir as medições da seção 11.3 no deploy (as do M5 são na rede local)
 - [ ] Api no Docker Compose (Dockerfile da api), como prevê a seção 3
 - [ ] Deploy do web e da api (a api exige `WEB_ORIGIN` com a origem do web, D69; o build do web exige `VITE_API_URL`, D73)
 
