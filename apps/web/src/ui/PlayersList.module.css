@@ -1,0 +1,54 @@
+.title {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+.list {
+  display: grid;
+  gap: 4px;
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.row[aria-current='true'] {
+  background: var(--sky-line);
+}
+
+.nickname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mine {
+  color: var(--muted);
+}
+
+.amount,
+.result {
+  font-family: var(--font-mono);
+}
+
+.row[data-status='CASHED_OUT'] .result {
+  color: var(--teal);
+}
+
+.row[data-status='LOST'] .result {
+  color: var(--danger);
+}
