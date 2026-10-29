@@ -1,0 +1,16 @@
+.multiplier {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 160px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.multiplier[data-status='RUNNING'] {
+  color: var(--amber);
+}
+
+.multiplier[data-status='CRASHED'] {
+  color: var(--danger);
+}
