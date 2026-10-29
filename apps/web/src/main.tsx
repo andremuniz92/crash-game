@@ -4,6 +4,7 @@ import { App } from './App.js';
 import './ui/tokens.css';
 import './ui/base.css';
 import { createActions } from './app/actions.js';
+import { GameProvider } from './app/game-context.js';
 import { createSessionStorage, type KeyValueStorage } from './app/session.js';
 import { readWebConfig } from './config.js';
 import { createApiClient } from './net/api-client.js';
@@ -103,6 +104,8 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <GameProvider value={{ store, actions, clock }}>
+      <App />
+    </GameProvider>
   </StrictMode>,
 );

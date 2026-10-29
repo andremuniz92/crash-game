@@ -1,0 +1,38 @@
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap);
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--gap);
+}
+
+.stage {
+  min-width: 0;
+}
+
+.panel {
+  padding: var(--gap);
+  border: 1px solid var(--sky-line);
+  border-radius: var(--radius);
+  background: var(--sky);
+}
+
+.soon {
+  margin: 0;
+  color: var(--muted);
+}
+
+@media (min-width: 768px) {
+  .main {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    align-items: start;
+  }
+}
