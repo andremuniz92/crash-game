@@ -43,6 +43,12 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # A checagem da D85 exige VITE_API_URL; o deploy usa a URL real.
+      - name: Build do web
+        run: pnpm --filter @crash/web build
+        env:
+          VITE_API_URL: http://localhost:3000
+
   integration:
     runs-on: ubuntu-latest
     # Postgres de teste (D39): mesma imagem do docker-compose.yml.
