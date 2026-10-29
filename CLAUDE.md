@@ -521,6 +521,7 @@ Estimativa total: ~43–45 h (MVP sem M6: ~34–36 h).
 - [ ] Partículas no crash e no cash out
 - [ ] Easing nas transições
 - [ ] Teste em celular real e ajustes
+- [ ] Candidata a refatoração: a validação de origem pura está duplicada em `apps/web/src/config.ts` (`VITE_API_URL`, D73) e em `apps/api/src/shared/infrastructure/config/app-config.ts` (`WEB_ORIGIN`, D69); mover a função para o `@crash/shared`, com os testes das duas pontas continuando verdes
 
 ### M7 — Entrega (5 h)
 - [ ] README: GIF de 10 s, arquitetura, decisões (link para esta seção 4), fluxos críticos, como rodar, limitações
