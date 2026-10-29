@@ -528,7 +528,7 @@ Estimativa total: ~47–51 h (MVP sem M6: ~38–42 h).
 - [x] Decidir como abrir o front num celular real para medir os 60 fps (D98: pelo IP da rede local, trocando `WEB_ORIGIN` e `VITE_API_URL`)
 - [x] `Idempotency-Key` gerada com `crypto.getRandomValues`, com teste de que não depende do `crypto.randomUUID` (D96); roteiro do celular no README com `WEB_ORIGIN` e `VITE_API_URL` pelo IP (D98)
 - [x] Frame loop único dirigindo o texto e a cena (D89)
-- [ ] Modelo puro da cena: câmera, curva do multiplicador, pipa subindo, animação do crash, movimento reduzido e paleta conferida com o `tokens.css` (D87, D88)
+- [x] Modelo puro da cena: câmera, curva do multiplicador, pipa subindo, animação do crash, movimento reduzido e paleta conferida com o `tokens.css` (D87, D88)
 - [ ] Ao receber `round:crashed`, a cena congela no crash point exato: o tick (D68) e o cálculo local (D11) podem passar um pouco dele. O texto já faz isso desde o M4 (`displayMultiplier`); falta a pipa (D87)
 - [ ] Adaptador Pixi sem objeto criado por frame (D88, D95)
 - [ ] `<GameCanvas />` com ciclo de vida correto, falhas de contexto e texto do multiplicador em DOM sobre o canvas (D90, D91, D92)
