@@ -13,6 +13,25 @@ export default defineConfig({
     strictPort: true,
   },
   test: {
-    include: ['src/**/*.test.{ts,tsx}'],
+    // Lógica no node; componentes no jsdom, que só os .tsx pagam (D82).
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unit',
+          include: ['src/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'components',
+          include: ['src/**/*.test.tsx'],
+          environment: 'jsdom',
+          setupFiles: ['./src/testing/setup-dom.ts'],
+        },
+      },
+    ],
   },
 });
