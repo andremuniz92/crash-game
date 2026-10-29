@@ -32,6 +32,9 @@ export function createServerClock({
 
   function sample(serverTime: number, receivedAt: number): void {
     samples.push({ offset: serverTime - receivedAt, receivedAt });
+    // A estimativa acompanha cada amostra, mesmo que ninguém leia o offset
+    // antes de ela sair da janela.
+    offset();
   }
 
   function offset(): number {

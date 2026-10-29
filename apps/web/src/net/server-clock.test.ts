@@ -82,6 +82,16 @@ describe('createServerClock (D74)', () => {
     expect(clock.offset()).toBe(50_000);
   });
 
+  it('R9: a estimativa vale mesmo se ninguém leu o offset antes de a amostra expirar', () => {
+    const local = fakeNow();
+    const clock = createServerClock({ now: local.now });
+
+    clock.restart(51_000, 1_000);
+    local.advance(60_000);
+
+    expect(clock.offset()).toBe(50_000);
+  });
+
   it('R7: restart descarta as amostras anteriores e recomeça pela do snapshot', () => {
     const local = fakeNow();
     const clock = createServerClock({ now: local.now });
