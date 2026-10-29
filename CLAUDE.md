@@ -532,7 +532,7 @@ Estimativa total: ~47–51 h (MVP sem M6: ~38–42 h).
 - [ ] Ao receber `round:crashed`, a cena congela no crash point exato: o tick (D68) e o cálculo local (D11) podem passar um pouco dele. O texto já faz isso desde o M4 (`displayMultiplier`); falta a pipa (D87)
 - [ ] Adaptador Pixi sem objeto criado por frame (D88, D95)
 - [ ] `<GameCanvas />` com ciclo de vida correto, falhas de contexto e texto do multiplicador em DOM sobre o canvas (D90, D91, D92)
-- [ ] Contador de segundos restantes da janela de apostas (D100)
+- [x] Contador de segundos restantes da janela de apostas (D100)
 - [ ] Medidor de fps (`?fps`) e marcas de carregamento (D97)
 - [ ] Medição "antes" (bundle, Lighthouse, fps no celular)
 - [ ] Otimização 1: cena por import dinâmico (D94)

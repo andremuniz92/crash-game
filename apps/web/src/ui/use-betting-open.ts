@@ -1,5 +1,6 @@
 import { useEffect, useReducer } from 'react';
 import { useGame, useGameState } from '../app/game-context.js';
+import { bettingOpenAt } from './betting-countdown.js';
 
 /**
  * A janela de apostas está aberta pelo relógio do servidor (D74): BETTING e
@@ -9,9 +10,10 @@ import { useGame, useGameState } from '../app/game-context.js';
  */
 export function useBettingOpen(): boolean {
   const { clock } = useGame();
-  const bettingEndsAt = useGameState((state) =>
-    state.round?.status === 'BETTING' ? state.round.bettingEndsAt : null,
+  const round = useGameState((state) =>
+    state.round?.status === 'BETTING' ? state.round : null,
   );
+  const bettingEndsAt = round?.bettingEndsAt ?? null;
   const [, rerender] = useReducer((count: number) => count + 1, 0);
 
   useEffect(() => {
@@ -26,5 +28,5 @@ export function useBettingOpen(): boolean {
     return () => clearTimeout(timer);
   }, [bettingEndsAt, clock]);
 
-  return bettingEndsAt !== null && clock.serverNow() < bettingEndsAt;
+  return bettingOpenAt(round, clock.serverNow());
 }

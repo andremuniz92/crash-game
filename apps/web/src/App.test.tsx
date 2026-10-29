@@ -68,4 +68,26 @@ describe('App', () => {
     expect(screen.getByRole('region', { name: 'Aposta' })).toBeTruthy();
     expect(liveRegions()).toHaveLength(1);
   });
+
+  it('AR4: em BETTING, o contador aparece no palco e a única região aria-live continua o anunciador', () => {
+    const store = createGameStore();
+    store.load({
+      round: {
+        status: 'BETTING',
+        id: '00000000-0000-4000-8000-0000000000a1',
+        seedHash: 'h'.repeat(64),
+        bettingEndsAt: 10_000,
+      },
+      bets: [],
+      myBet: null,
+      serverTime: 0,
+    });
+    renderApp({ store, serverNow: 5_000 });
+
+    const stage = document.querySelector('[data-stage]');
+    const countdown = stage?.querySelector<HTMLElement>('[data-countdown]');
+    expect(countdown?.hidden).toBe(false);
+    expect(countdown?.getAttribute('aria-hidden')).toBe('true');
+    expect(document.querySelectorAll('[aria-live]')).toHaveLength(1);
+  });
 });

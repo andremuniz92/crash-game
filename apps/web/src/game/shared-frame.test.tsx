@@ -1,6 +1,7 @@
 import type { MyBetDto, RoundDto } from '@crash/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createGameStore } from '../store/game-store.js';
+import { BettingCountdown } from '../ui/BettingCountdown.js';
 import { CashOutValue } from '../ui/CashOutValue.js';
 import { fakeFrames } from '../testing/fake-browser.js';
 import { renderWithGame } from '../testing/render-game.js';
@@ -53,5 +54,44 @@ describe('um relógio por frame (D89)', () => {
     // 11.553 ms → 2,00x; 1.000 centavos × 2,00x = 20,00.
     expect(getByTestId('multiplier').textContent).toBe('2,00x');
     expect(getByTestId('cashout').textContent).toBe(' 20,00');
+  });
+
+  it('SF2: multiplicador, valor do saque e contador leem o relógio uma vez por frame', () => {
+    const frames = fakeFrames();
+    const store = createGameStore();
+    const betting: RoundDto = {
+      status: 'BETTING',
+      id: running.id,
+      seedHash: running.seedHash,
+      bettingEndsAt: 10_000,
+    };
+    store.load({ round: betting, bets: [], myBet: null, serverTime: 0 });
+    let now = 0;
+    const clock = { serverNow: vi.fn(() => now) };
+    const { getByTestId } = renderWithGame(
+      <>
+        <span data-testid="multiplier">
+          <MultiplierText />
+        </span>
+        <span data-testid="cashout">
+          <CashOutValue />
+        </span>
+        <span data-testid="countdown">
+          <BettingCountdown />
+        </span>
+      </>,
+      { store, clock },
+    );
+    clock.serverNow.mockClear();
+    now = 6_500;
+
+    frames.step();
+
+    expect(clock.serverNow).toHaveBeenCalledTimes(1);
+    expect(getByTestId('multiplier').textContent).toBe('1,00x');
+    expect(
+      getByTestId('countdown').querySelector('[data-countdown-seconds]')
+        ?.textContent,
+    ).toBe('4');
   });
 });

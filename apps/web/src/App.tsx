@@ -3,6 +3,7 @@ import { useGameState } from './app/game-context.js';
 import { GameStage } from './game/GameStage.js';
 import { MultiplierText } from './game/MultiplierText.js';
 import { BetPanel } from './ui/BetPanel.js';
+import { BettingCountdown } from './ui/BettingCountdown.js';
 import { GuestForm } from './ui/GuestForm.js';
 import { History } from './ui/History.js';
 import { PlayersList } from './ui/PlayersList.js';
@@ -21,6 +22,7 @@ export function App() {
         <section className={styles.stage} aria-label="Rodada">
           <GameStage>
             <MultiplierText />
+            <BettingCountdown />
           </GameStage>
           <History />
         </section>

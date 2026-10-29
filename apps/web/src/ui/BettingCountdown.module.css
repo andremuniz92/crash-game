@@ -1,0 +1,20 @@
+/*
+ * Abaixo do multiplicador, no palco de 1280×720. Sem display aqui: o
+ * atributo hidden (display: none do navegador) esconde o contador (D100).
+ */
+.countdown {
+  position: absolute;
+  top: 540px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 48px;
+  font-variant-numeric: tabular-nums;
+}
+
+.countdown span {
+  color: var(--text);
+  font-weight: 700;
+}

@@ -6,6 +6,7 @@ import { formatMultiplier } from '../format/multiplier.js';
 import { betLimitsHint, readBetInput } from './bet-input.js';
 import { CashOutValue } from './CashOutValue.js';
 import styles from './BetPanel.module.css';
+import { bettingOpenAt } from './betting-countdown.js';
 import { useBettingOpen } from './use-betting-open.js';
 
 /** Erro da última ação, preso à rodada em que aconteceu. */
@@ -47,9 +48,7 @@ export function BetPanel() {
     event?.preventDefault();
     const { round } = store.getState();
     // Reconfere no clique: o timer do fechamento pode ter atrasado (aba em segundo plano).
-    const open =
-      round?.status === 'BETTING' && clock.serverNow() < round.bettingEndsAt;
-    if (!open) {
+    if (!bettingOpenAt(round, clock.serverNow())) {
       rerender();
       return;
     }
@@ -59,7 +58,7 @@ export function BetPanel() {
     const result = await actions.placeBet(input.cents);
     inFlight.current.bet = false;
     if (result.status === 'failed') {
-      setError({ roundId: round.id, message: result.message });
+      setError({ roundId: round?.id ?? null, message: result.message });
     }
   }
 
