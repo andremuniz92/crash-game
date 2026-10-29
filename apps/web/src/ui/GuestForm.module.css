@@ -1,0 +1,51 @@
+.form {
+  display: grid;
+  gap: 8px;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.input {
+  /* 16 px ou mais: o iOS não dá zoom ao focar. */
+  font-size: 1rem;
+  min-height: var(--touch);
+  padding: 0 12px;
+  border: 1px solid var(--sky-line);
+  border-radius: var(--radius);
+  background: var(--sky-deep);
+  color: var(--text);
+}
+
+.input:focus-visible,
+.button:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.button {
+  min-height: var(--touch);
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--teal);
+  color: var(--on-accent);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error {
+  margin: 0;
+  color: var(--danger);
+}
