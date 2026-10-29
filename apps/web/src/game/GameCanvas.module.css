@@ -1,0 +1,10 @@
+/* Camada da cena: ocupa o palco inteiro, por baixo do texto (D90). */
+.host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.host canvas {
+  display: block;
+}

@@ -1,3 +1,4 @@
+import './testing/silence-canvas.js'; // primeiro import: troca o getContext antes de o Pixi carregar
 import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';

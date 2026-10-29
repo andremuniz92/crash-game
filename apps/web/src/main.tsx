@@ -5,6 +5,8 @@ import './ui/tokens.css';
 import './ui/base.css';
 import { createActions } from './app/actions.js';
 import { createFrameLoop } from './app/frame-loop.js';
+import type { SceneEnvironment } from './game/mount-scene.js';
+import { createPixiRenderer } from './game/pixi/create-renderer.js';
 import { GameProvider } from './app/game-context.js';
 import { createIdempotencyKey } from './app/idempotency-key.js';
 import { whenLive } from './app/when-live.js';
@@ -29,6 +31,11 @@ const now = () => performance.now();
 const store = createGameStore();
 const clock = createServerClock({ now });
 const frames = createFrameLoop({ clock });
+const scene: SceneEnvironment = {
+  createRenderer: createPixiRenderer,
+  matchMedia: (query) => window.matchMedia(query),
+  devicePixelRatio: () => window.devicePixelRatio,
+};
 const api = createApiClient({
   baseUrl: config.apiUrl,
   // Chamado solto, o fetch do navegador lança "Illegal invocation".
@@ -111,7 +118,7 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <GameProvider value={{ store, actions, clock, frames }}>
+    <GameProvider value={{ store, actions, clock, frames, scene }}>
       <App />
     </GameProvider>
   </StrictMode>,

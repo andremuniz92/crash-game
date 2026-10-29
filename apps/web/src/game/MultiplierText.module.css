@@ -1,4 +1,6 @@
 .multiplier {
+  /* Posicionado para pintar por cima da camada da cena (D90). */
+  position: relative;
   margin: 0;
   color: var(--text);
   font-family: var(--font-mono);

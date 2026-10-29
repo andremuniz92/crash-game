@@ -5,6 +5,7 @@ import type { GameState } from '../store/game-state.js';
 import type { GameStore } from '../store/game-store.js';
 import type { Actions } from './actions.js';
 import type { FrameLoop } from './frame-loop.js';
+import type { SceneEnvironment } from '../game/mount-scene.js';
 
 /**
  * O que os componentes precisam, vindo do composition root (main.tsx). Nos
@@ -16,6 +17,8 @@ export interface GameDeps {
   clock: Pick<ServerClock, 'serverNow'>;
   /** O único laço de animação (D89): quem desenha por frame assina aqui. */
   frames: FrameLoop;
+  /** Renderer, preferências de movimento e densidade de pixels da cena. */
+  scene: SceneEnvironment;
 }
 
 const GameContext = createContext<GameDeps | null>(null);

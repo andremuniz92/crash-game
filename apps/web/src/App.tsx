@@ -1,5 +1,6 @@
 import styles from './App.module.css';
 import { useGameState } from './app/game-context.js';
+import { GameCanvas } from './game/GameCanvas.js';
 import { GameStage } from './game/GameStage.js';
 import { MultiplierText } from './game/MultiplierText.js';
 import { BetPanel } from './ui/BetPanel.js';
@@ -21,6 +22,7 @@ export function App() {
       <main className={styles.main}>
         <section className={styles.stage} aria-label="Rodada">
           <GameStage>
+            <GameCanvas />
             <MultiplierText />
             <BettingCountdown />
           </GameStage>
