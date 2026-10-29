@@ -338,13 +338,14 @@ describe('placeBet e cashOut: pending e chamadas simultâneas (D78)', () => {
 });
 
 describe('fetchSnapshot (D76, D77)', () => {
-  it('SN1: com sessão, manda Bearer, aplica o snapshot e o devolve', async () => {
+  it('SN1: com sessão, manda Bearer e devolve o snapshot sem tocar na store (quem aplica é a conexão)', async () => {
     const response = snapshot('RUNNING', { myBet });
     const { actions, store, calls } = setup([json(200, response)]);
+    const before = store.getState();
 
     expect(await actions.fetchSnapshot()).toEqual(response);
     expect(calls[0]?.headers.authorization).toBe('Bearer tok-ana');
-    expect(store.getState()).toMatchObject({ round: response.round, myBet });
+    expect(store.getState()).toBe(before);
   });
 
   it('SN2: 401 apaga a sessão e refaz o GET sem Bearer, uma vez', async () => {
@@ -359,10 +360,7 @@ describe('fetchSnapshot (D76, D77)', () => {
     expect(calls[0]?.headers.authorization).toBe('Bearer tok-ana');
     expect(calls[1]?.headers.authorization).toBeUndefined();
     expect(items.has(SESSION_KEY)).toBe(false);
-    expect(store.getState()).toMatchObject({
-      player: null,
-      round: anonymous.round,
-    });
+    expect(store.getState()).toMatchObject({ player: null, round: null });
   });
 
   it('SN3: 401 seguido de outro 401 sobe o erro depois de exatamente 2 chamadas', async () => {

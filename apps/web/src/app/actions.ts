@@ -25,8 +25,12 @@ export interface Actions {
   restoreSession(): Promise<void>;
   placeBet(amount: number): Promise<ActionResult>;
   cashOut(): Promise<ActionResult>;
-  /** Para a conexão da F6: rejeita, e quem chama decide o backoff. */
-  fetchSnapshot(): Promise<CurrentRoundResponse>;
+  /**
+   * Para a conexão (D76): busca o snapshot sem aplicar na store, porque a
+   * conexão aplica na ordem certa e descarta GET de conexão antiga. Rejeita,
+   * e quem chama decide o backoff.
+   */
+  fetchSnapshot(signal?: AbortSignal): Promise<CurrentRoundResponse>;
 }
 
 /** 409 que mostram o estado local errado: a tela precisa ressincronizar (D78). */
@@ -167,21 +171,18 @@ export function createActions({
       });
     },
 
-    async fetchSnapshot() {
+    async fetchSnapshot(signal) {
       const saved = session.load();
-      let snapshot: CurrentRoundResponse;
       try {
-        snapshot = await api.currentRound(saved?.token ?? null);
+        return await api.currentRound(saved?.token ?? null, signal);
       } catch (error) {
         // Token recusado: some a sessão e o GET é refeito sem Bearer, uma vez (D77).
         if (!(saved && error instanceof ApiError && error.status === 401)) {
           throw error;
         }
         forget();
-        snapshot = await api.currentRound(null);
+        return await api.currentRound(null, signal);
       }
-      store.load(snapshot);
-      return snapshot;
     },
   };
 }

@@ -117,6 +117,21 @@ describe('createApiClient (seção 8.1)', () => {
     expect(error).toMatchObject({ kind: 'network' });
   });
 
+  it('A9: abortar o sinal externo rejeita a requisição (AbortError) e cancela o timer do timeout', async () => {
+    vi.useFakeTimers();
+    const { api } = client(hang);
+    const outside = new AbortController();
+
+    const request = rejection(api.currentRound('tok', outside.signal));
+    outside.abort();
+    const error = await request;
+
+    expect(error).toMatchObject({ name: 'AbortError' });
+    expect(error).not.toBeInstanceOf(NetworkError);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
   describe('timeout de 10 s', () => {
     beforeEach(() => {
       vi.useFakeTimers();

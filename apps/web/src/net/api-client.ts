@@ -34,7 +34,10 @@ export class NetworkError extends Error {
 /** Uma função por rota da seção 8.1. O token vai explícito em cada chamada. */
 export interface ApiClient {
   createGuest(nickname: string): Promise<GuestResponse>;
-  currentRound(token: string | null): Promise<CurrentRoundResponse>;
+  currentRound(
+    token: string | null,
+    signal?: AbortSignal,
+  ): Promise<CurrentRoundResponse>;
   wallet(token: string): Promise<WalletResponse>;
   history(): Promise<RoundHistoryItem[]>;
   verify(roundId: string): Promise<VerifyResponse>;
@@ -51,6 +54,8 @@ interface RequestOptions {
   token?: string | null;
   body?: unknown;
   idempotencyKey?: string;
+  /** Cancelamento por quem chama (dispose da conexão, D76). */
+  signal?: AbortSignal;
 }
 
 export function createApiClient({
@@ -73,8 +78,17 @@ export function createApiClient({
     if (options.idempotencyKey)
       headers['Idempotency-Key'] = options.idempotencyKey;
 
+    // Um controlador só para o timeout e o sinal de fora; a flag diz qual abortou.
+    // Sem AbortSignal.any, que exigiria Safari 17.4 e Chrome 116.
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    const cancel = () => controller.abort();
+    if (options.signal?.aborted) cancel();
+    options.signal?.addEventListener('abort', cancel);
     try {
       let response: Response;
       try {
@@ -88,21 +102,27 @@ export function createApiClient({
           signal: controller.signal,
         });
       } catch {
-        throw controller.signal.aborted
-          ? new NetworkError('timeout', `sem resposta em ${timeoutMs} ms`)
-          : new NetworkError('network', 'falha de rede');
+        if (timedOut) {
+          throw new NetworkError('timeout', `sem resposta em ${timeoutMs} ms`);
+        }
+        if (controller.signal.aborted) {
+          throw new DOMException('requisição cancelada', 'AbortError');
+        }
+        throw new NetworkError('network', 'falha de rede');
       }
       if (!response.ok) throw await toApiError(response);
       return (await response.json()) as T;
     } finally {
       clearTimeout(timer);
+      options.signal?.removeEventListener('abort', cancel);
     }
   }
 
   return {
     createGuest: (nickname) =>
       request('/players/guest', { method: 'POST', body: { nickname } }),
-    currentRound: (token) => request('/rounds/current', { token }),
+    currentRound: (token, signal) =>
+      request('/rounds/current', { token, signal }),
     wallet: (token) => request('/wallet', { token }),
     history: () => request('/rounds/history'),
     verify: (roundId) =>
