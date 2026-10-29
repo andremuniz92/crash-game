@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { InvalidWebConfigError, readWebConfig } from './config.js';
+import {
+  assertBuildEnv,
+  InvalidWebConfigError,
+  readWebConfig,
+} from './config.js';
 
 describe('readWebConfig (D73)', () => {
   it('WC1: http vira ws, com o WebSocket em /ws na mesma origem', () => {
@@ -48,5 +52,27 @@ describe('readWebConfig (D73)', () => {
     const read = () => readWebConfig({ VITE_API_URL: value, PROD: false });
     expect(read).toThrow(InvalidWebConfigError);
     expect(read).toThrow(/VITE_API_URL deve ser uma origem/);
+  });
+});
+
+describe('assertBuildEnv (D85)', () => {
+  it.each([{}, { VITE_API_URL: '' }, { VITE_API_URL: 'http://x.com/api' }])(
+    'BC1: no build de produção, falha sem a variável ou com origem inválida (%j)',
+    (env) => {
+      expect(() => assertBuildEnv(env, 'production')).toThrow(
+        InvalidWebConfigError,
+      );
+      expect(() => assertBuildEnv(env, 'production')).toThrow(/VITE_API_URL/);
+    },
+  );
+
+  it('BC1: com a origem válida, o build de produção segue', () => {
+    expect(() =>
+      assertBuildEnv({ VITE_API_URL: 'https://api.example.app' }, 'production'),
+    ).not.toThrow();
+  });
+
+  it('BC1: fora de produção não checa', () => {
+    expect(() => assertBuildEnv({}, 'development')).not.toThrow();
   });
 });

@@ -49,3 +49,17 @@ function originOf(raw: string): string | null {
     return null;
   }
 }
+
+/**
+ * Chamado pelo vite.config.ts no `vite build`: em produção, o build falha
+ * sem VITE_API_URL ou com origem inválida, em vez de gerar uma página que só
+ * quebra ao abrir (D73, D85).
+ */
+export function assertBuildEnv(
+  env: { VITE_API_URL?: string },
+  mode: string,
+): void {
+  if (mode === 'production') {
+    readWebConfig({ VITE_API_URL: env.VITE_API_URL, PROD: true });
+  }
+}
