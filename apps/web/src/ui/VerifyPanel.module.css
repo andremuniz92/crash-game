@@ -1,0 +1,80 @@
+.panel {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--sky-line);
+  border-radius: var(--radius);
+  background: var(--sky);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.close {
+  min-height: var(--touch);
+  padding: 0 12px;
+  border: 1px solid var(--sky-line);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.data {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.data dt {
+  color: var(--muted);
+}
+
+.data dd {
+  margin: 0;
+}
+
+.code,
+.command {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.command {
+  margin: 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--sky-deep);
+  white-space: pre-wrap;
+}
+
+.muted {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.good {
+  margin: 0;
+  color: var(--teal);
+}
+
+.bad {
+  margin: 0;
+  color: var(--danger);
+}
+
+.link {
+  color: var(--teal);
+}

@@ -1,10 +1,15 @@
-import type { ClientErrorCode, CurrentRoundResponse } from '@crash/shared';
+import type {
+  ClientErrorCode,
+  CurrentRoundResponse,
+  VerifyResponse,
+} from '@crash/shared';
 import { type ApiClient, ApiError } from '../net/api-client.js';
 import { withRetry } from '../net/retry.js';
 import {
   applyBetPlaced,
   applyCashedOut,
   type GameState,
+  publishedHashOf,
   setHistory,
   setPending,
   signIn,
@@ -13,6 +18,7 @@ import {
 import type { GameStore } from '../store/game-store.js';
 import { errorMessage } from './error-messages.js';
 import type { SessionStorage } from './session.js';
+import { sha256Hex } from './sha256.js';
 
 /** Resultado para a tela: a mensagem já vem pronta (D78). */
 export type ActionResult =
@@ -28,6 +34,8 @@ export interface Actions {
   cashOut(): Promise<ActionResult>;
   /** GET /rounds/history mesclado ao que o WS trouxe; falha de rede não apaga nada. */
   loadHistory(): Promise<void>;
+  /** GET /rounds/:id/verify e o SHA-256 da seed contra o hash publicado antes (D80, D86). */
+  verifyRound(roundId: string): Promise<VerifyResult>;
   /**
    * Para a conexão (D76): busca o snapshot sem aplicar na store, porque a
    * conexão aplica na ordem certa e descarta GET de conexão antiga. Rejeita,
@@ -35,6 +43,21 @@ export interface Actions {
    */
   fetchSnapshot(signal?: AbortSignal): Promise<CurrentRoundResponse>;
 }
+
+/** Resultado da verificação de uma rodada (D80, D86). */
+export type VerifyResult =
+  | { status: 'failed'; message: string }
+  | {
+      status: 'done';
+      serverSeed: string;
+      /** O hash contra o qual a seed foi conferida. */
+      seedHash: string;
+      crashPoint: number;
+      /** A página viu o hash publicado antes do crash. */
+      seenLive: boolean;
+      /** null: sem crypto.subtle (contexto inseguro). */
+      hashMatches: boolean | null;
+    };
 
 /** 409 que mostram o estado local errado: a tela precisa ressincronizar (D78). */
 const STATE_CONFLICTS = new Set<ClientErrorCode>([
@@ -56,6 +79,7 @@ export function createActions({
   newKey,
   resync,
   sleep,
+  subtle,
 }: {
   api: ApiClient;
   store: GameStore;
@@ -65,6 +89,8 @@ export function createActions({
   /** Ressincronização da conexão (D76). */
   resync: () => void;
   sleep?: (ms: number) => Promise<void>;
+  /** crypto.subtle; ausente fora de HTTPS e localhost. */
+  subtle?: SubtleCrypto;
 }): Actions {
   const update = (change: (state: GameState) => GameState) =>
     store.setState(change, true);
@@ -181,6 +207,30 @@ export function createActions({
       } catch {
         // Fica o que já havia; a próxima chegada a live tenta de novo.
       }
+    },
+
+    async verifyRound(roundId) {
+      let response: VerifyResponse;
+      try {
+        response = await api.verify(roundId);
+      } catch (error) {
+        return { status: 'failed', message: errorMessage(error) };
+      }
+      // A garantia é a seed bater com o hash publicado antes do crash (D86);
+      // sem ele, só resta o da própria resposta.
+      const published = publishedHashOf(store.getState(), roundId);
+      const seedHash = published ?? response.seedHash;
+      const hashMatches = subtle
+        ? (await sha256Hex(response.serverSeed, subtle)) === seedHash
+        : null;
+      return {
+        status: 'done',
+        serverSeed: response.serverSeed,
+        seedHash,
+        crashPoint: response.crashPoint,
+        seenLive: published !== null,
+        hashMatches,
+      };
     },
 
     async fetchSnapshot(signal) {

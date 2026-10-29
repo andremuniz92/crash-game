@@ -68,6 +68,8 @@ const actions = createActions({
   session: createSessionStorage(browserStorage()),
   newKey: () => crypto.randomUUID(),
   resync: () => connection?.resync(),
+  // Fora de HTTPS e localhost, o navegador não oferece o subtle (D80).
+  subtle: globalThis.crypto?.subtle,
 });
 connection = createConnection({
   url: config.wsUrl,

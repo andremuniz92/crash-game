@@ -4,6 +4,7 @@ import { GameStage } from './game/GameStage.js';
 import { MultiplierText } from './game/MultiplierText.js';
 import { BetPanel } from './ui/BetPanel.js';
 import { GuestForm } from './ui/GuestForm.js';
+import { History } from './ui/History.js';
 import { Header } from './ui/Header.js';
 import { RoundAnnouncer } from './ui/RoundAnnouncer.js';
 
@@ -19,6 +20,7 @@ export function App() {
           <GameStage>
             <MultiplierText />
           </GameStage>
+          <History />
         </section>
         <aside className={styles.panel}>
           {signedIn ? <BetPanel /> : <GuestForm />}

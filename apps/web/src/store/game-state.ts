@@ -29,6 +29,16 @@ export interface GameState {
   pending: { bet: boolean; cashOut: boolean };
   /** Estado da conexão WS (D76), para o cabeçalho. */
   connection: ConnectionStatus;
+  /**
+   * seedHash publicado antes do crash, por rodada vista ao vivo (D86), do
+   * mais novo para o mais antigo.
+   */
+  publishedHashes: PublishedHash[];
+}
+
+export interface PublishedHash {
+  roundId: string;
+  seedHash: string;
 }
 
 export type ConnectionStatus = 'connecting' | 'syncing' | 'live' | 'waiting';
@@ -50,7 +60,30 @@ export const initialGameState: GameState = {
   balance: null,
   pending: { bet: false, cashOut: false },
   connection: 'connecting',
+  publishedHashes: [],
 };
+
+/** As 20 rodadas do histórico e a atual. */
+const PUBLISHED_LIMIT = HISTORY_LIMIT + 1;
+
+/** O seedHash que a página viu antes do crash, ou null (D86). */
+export function publishedHashOf(
+  state: GameState,
+  roundId: string,
+): string | null {
+  return (
+    state.publishedHashes.find((h) => h.roundId === roundId)?.seedHash ?? null
+  );
+}
+
+function recordHash(
+  list: PublishedHash[],
+  roundId: string,
+  seedHash: string,
+): PublishedHash[] {
+  if (list.some((h) => h.roundId === roundId)) return list;
+  return [{ roundId, seedHash }, ...list].slice(0, PUBLISHED_LIMIT);
+}
 
 /**
  * Mescla a resposta do GET /rounds/history com o que o WS já trouxe: sem
@@ -150,11 +183,19 @@ export function applySnapshot(
   state: GameState,
   snapshot: CurrentRoundResponse,
 ): GameState {
+  const { round } = snapshot;
+  // Só conta como publicado antes do crash se a rodada ainda não crashou:
+  // num snapshot em CRASHED, o hash chega junto com a seed (D86).
+  const live = round?.status === 'BETTING' || round?.status === 'RUNNING';
   return {
     ...state,
-    round: snapshot.round,
+    round,
     bets: snapshot.bets,
     myBet: snapshot.myBet,
+    publishedHashes:
+      round && live
+        ? recordHash(state.publishedHashes, round.id, round.seedHash)
+        : state.publishedHashes,
   };
 }
 
@@ -174,6 +215,7 @@ export function applyMessage(state: GameState, message: WsMessage): GameState {
         round: { status: 'BETTING', id: roundId, seedHash, bettingEndsAt },
         bets: [],
         myBet: null,
+        publishedHashes: recordHash(state.publishedHashes, roundId, seedHash),
       };
     }
     case 'round:started': {

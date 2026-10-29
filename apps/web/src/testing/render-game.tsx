@@ -13,6 +13,12 @@ export function fakeActions(overrides: Partial<Actions> = {}): Actions {
     placeBet: vi.fn(() => Promise.resolve({ status: 'done' as const })),
     cashOut: vi.fn(() => Promise.resolve({ status: 'done' as const })),
     loadHistory: vi.fn(() => Promise.resolve()),
+    verifyRound: vi.fn(() =>
+      Promise.resolve({
+        status: 'failed' as const,
+        message: 'sem verificação no teste',
+      }),
+    ),
     fetchSnapshot: vi.fn(() =>
       Promise.reject(new Error('sem snapshot no teste')),
     ),

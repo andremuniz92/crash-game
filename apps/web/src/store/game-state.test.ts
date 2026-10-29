@@ -16,6 +16,7 @@ import {
   type GameState,
   HISTORY_LIMIT,
   initialGameState,
+  publishedHashOf,
   setBalance,
   setConnection,
   setHistory,
@@ -116,6 +117,7 @@ describe('applySnapshot (D75)', () => {
       balance: null,
       pending: { bet: false, cashOut: false },
       connection: 'connecting',
+      publishedHashes: [],
     });
   });
 
@@ -143,8 +145,7 @@ describe('applySnapshot (D75)', () => {
         myBet: myPending(bet(1), 1_000),
         serverTime: T0,
       };
-      expect(applySnapshot(state({ history }), snapshot)).toEqual({
-        ...initialGameState,
+      expect(applySnapshot(state({ history }), snapshot)).toMatchObject({
         round,
         bets: snapshot.bets,
         myBet: snapshot.myBet,
@@ -197,6 +198,7 @@ describe('applyMessage: rodada (D75)', () => {
       round: betting(),
       bets: [],
       myBet: null,
+      publishedHashes: [{ roundId: ROUND, seedHash: SEED_HASH }],
     });
   });
 
@@ -481,5 +483,61 @@ describe('setHistory (REST e WS)', () => {
     expect(merged[0]?.id).toBe(item(30, 0).id);
     const times = merged.map((h) => h.crashedAt);
     expect(times).toEqual([...times].sort((a, b) => b - a));
+  });
+});
+
+describe('hash publicado antes do crash (D86)', () => {
+  const crashedRound: RoundDto = {
+    ...running(),
+    status: 'CRASHED',
+    crashedAt: T0 + 25_000,
+    crashPoint: 235,
+    serverSeed: SEED,
+  };
+  const snapshotOf = (round: RoundDto): CurrentRoundResponse => ({
+    round,
+    bets: [],
+    myBet: null,
+    serverTime: T0,
+  });
+
+  it('SH1: o round:betting registra o seedHash; o round:started e o crash mantêm o registro', () => {
+    let current = applyMessage(initialGameState, msg.betting());
+    current = applyMessage(current, msg.started());
+    current = applyMessage(current, msg.crashed());
+    expect(publishedHashOf(current, ROUND)).toBe(SEED_HASH);
+  });
+
+  it.each([
+    ['BETTING', betting()],
+    ['RUNNING', running()],
+  ])(
+    'SH2: snapshot com a rodada em %s registra o seedHash',
+    (_status, round) => {
+      const current = applySnapshot(initialGameState, snapshotOf(round));
+      expect(publishedHashOf(current, ROUND)).toBe(SEED_HASH);
+    },
+  );
+
+  it('SH3: snapshot com a rodada já em CRASHED não registra (o hash veio junto com a seed)', () => {
+    const current = applySnapshot(initialGameState, snapshotOf(crashedRound));
+    expect(publishedHashOf(current, ROUND)).toBeNull();
+  });
+
+  it('SH3: o round:crashed de uma rodada não vista ao vivo não registra', () => {
+    const current = applyMessage(state({ round: running() }), msg.crashed());
+    expect(publishedHashOf(current, ROUND)).toBeNull();
+  });
+
+  it('SH4: guarda no máximo 21 rodadas (as 20 do histórico e a atual)', () => {
+    let current = initialGameState;
+    for (let i = 0; i < 25; i++) {
+      const roundId = `00000000-0000-4000-8000-0000000004${String(i).padStart(2, '0')}`;
+      current = applyMessage(current, msg.betting(roundId));
+    }
+    expect(current.publishedHashes).toHaveLength(21);
+    expect(current.publishedHashes[0]?.roundId).toBe(
+      '00000000-0000-4000-8000-000000000424',
+    );
   });
 });
