@@ -530,12 +530,12 @@ Estimativa total: ~47–51 h (MVP sem M6: ~38–42 h).
 - [x] Frame loop único dirigindo o texto e a cena (D89)
 - [x] Modelo puro da cena: câmera, curva do multiplicador, pipa subindo, animação do crash, movimento reduzido e paleta conferida com o `tokens.css` (D87, D88)
 - [ ] Ao receber `round:crashed`, a cena congela no crash point exato: o tick (D68) e o cálculo local (D11) podem passar um pouco dele. O texto já faz isso desde o M4 (`displayMultiplier`); falta a pipa (D87)
-- [ ] Adaptador Pixi sem objeto criado por frame (D88, D95)
+- [x] Adaptador Pixi sem objeto criado por frame (D88, D95)
 - [ ] `<GameCanvas />` com ciclo de vida correto, falhas de contexto e texto do multiplicador em DOM sobre o canvas (D90, D91, D92)
 - [x] Contador de segundos restantes da janela de apostas (D100)
 - [ ] Medidor de fps (`?fps`) e marcas de carregamento (D97)
 - [ ] Medição "antes" (bundle, Lighthouse, fps no celular)
-- [ ] Otimização 1: cena por import dinâmico (D94)
+- [ ] Otimização 1: cena por import dinâmico (D94). Candidatas a medir junto, vindas do spike da F4: (a) `skipExtensionImports: true` com `import 'pixi.js/graphics'`, sem o `browserAll` (~15 kB gzip a menos; validar no navegador); (b) importar `WebGLRenderer` e `CanvasRenderer` direto, no lugar do `autoDetectRenderer`, porque o build puxa os três renderers estáticos, inclusive o WebGPU
 - [ ] Otimização 2: escala responsiva com resolução pela escala do palco (D93)
 - [ ] Medição "depois" e README (linha de base do bundle, números de desempenho, limitações)
 
