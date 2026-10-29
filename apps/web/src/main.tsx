@@ -4,6 +4,7 @@ import { App } from './App.js';
 import './ui/tokens.css';
 import './ui/base.css';
 import { createActions } from './app/actions.js';
+import { createFrameLoop } from './app/frame-loop.js';
 import { GameProvider } from './app/game-context.js';
 import { createIdempotencyKey } from './app/idempotency-key.js';
 import { whenLive } from './app/when-live.js';
@@ -27,6 +28,7 @@ const config = readWebConfig(import.meta.env);
 const now = () => performance.now();
 const store = createGameStore();
 const clock = createServerClock({ now });
+const frames = createFrameLoop({ clock });
 const api = createApiClient({
   baseUrl: config.apiUrl,
   // Chamado solto, o fetch do navegador lança "Illegal invocation".
@@ -109,7 +111,7 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <GameProvider value={{ store, actions, clock }}>
+    <GameProvider value={{ store, actions, clock, frames }}>
       <App />
     </GameProvider>
   </StrictMode>,

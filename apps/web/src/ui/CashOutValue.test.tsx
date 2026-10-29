@@ -2,9 +2,11 @@ import type { MyBetDto, RoundDto } from '@crash/shared';
 import { act } from '@testing-library/react';
 import { Profiler } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createFrameLoop } from '../app/frame-loop.js';
 import { createGameStore } from '../store/game-store.js';
 import { fakeFrames } from '../testing/fake-browser.js';
 import { renderWithGame } from '../testing/render-game.js';
+import { trackSubscriptions } from '../testing/track-subscriptions.js';
 import { CashOutValue } from './CashOutValue.js';
 
 afterEach(() => {
@@ -99,6 +101,25 @@ describe('CashOutValue', () => {
 
     unmount();
 
+    expect(frames.active()).toBe(0);
+  });
+
+  it('PV4: no StrictMode, uma assinatura no loop montado e nenhuma depois do unmount', () => {
+    const frames = fakeFrames();
+    const tracked = trackSubscriptions(
+      createFrameLoop({ clock: { serverNow: () => 0 } }),
+    );
+    const { unmount } = renderWithGame(<CashOutValue />, {
+      store: storeWith(running, pending),
+      frames: tracked.loop,
+      strict: true,
+    });
+    expect(tracked.live()).toBe(1);
+    expect(frames.active()).toBe(1);
+
+    unmount();
+
+    expect(tracked.live()).toBe(0);
     expect(frames.active()).toBe(0);
   });
 });

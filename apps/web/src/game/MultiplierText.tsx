@@ -5,30 +5,27 @@ import { displayMultiplier } from '../store/display-multiplier.js';
 import styles from './MultiplierText.module.css';
 
 /**
- * Multiplicador provisório até a cena do M5. Cada frame calcula o valor pelo
- * relógio do servidor (D11) e escreve no textContent, sem re-render do React
- * (D75). Muda a cada frame, então fica fora da leitura de tela: quem anuncia
- * as mudanças de estado é o RoundAnnouncer.
+ * Multiplicador em texto sobre o palco (D90). Cada frame do loop único (D89)
+ * calcula o valor pelo serverNow do frame (D11) e escreve no textContent, sem
+ * re-render do React (D75). Muda a cada frame, então fica fora da leitura de
+ * tela: quem anuncia as mudanças de estado é o RoundAnnouncer.
  */
 export function MultiplierText() {
-  const { store, clock } = useGame();
+  const { store, frames } = useGame();
   const element = useRef<HTMLParagraphElement>(null);
 
-  useEffect(() => {
-    let frame = 0;
-    const draw = () => {
-      const node = element.current;
-      if (node) {
+  useEffect(
+    () =>
+      frames.subscribe((serverNow) => {
+        const node = element.current;
+        if (!node) return;
         const { round } = store.getState();
-        const value = displayMultiplier(round, clock.serverNow());
+        const value = displayMultiplier(round, serverNow);
         node.textContent = value === null ? '—' : formatMultiplier(value);
         node.dataset.status = round?.status ?? 'NONE';
-      }
-      frame = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => cancelAnimationFrame(frame);
-  }, [store, clock]);
+      }),
+    [store, frames],
+  );
 
   return (
     <p ref={element} className={styles.multiplier} aria-hidden="true">

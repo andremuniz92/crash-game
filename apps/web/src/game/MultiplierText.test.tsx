@@ -1,10 +1,16 @@
 import type { CurrentRoundResponse, RoundDto } from '@crash/shared';
 import { act } from '@testing-library/react';
-import { Profiler, StrictMode } from 'react';
+import { Profiler } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  createFrameLoop,
+  type FrameListener,
+  type FrameLoop,
+} from '../app/frame-loop.js';
 import { createGameStore } from '../store/game-store.js';
 import { fakeFrames } from '../testing/fake-browser.js';
 import { renderWithGame } from '../testing/render-game.js';
+import { trackSubscriptions } from '../testing/track-subscriptions.js';
 import { MultiplierText } from './MultiplierText.js';
 
 afterEach(() => {
@@ -91,21 +97,45 @@ describe('MultiplierText', () => {
     expect(container.textContent).toBe('2,35x');
   });
 
-  it('MT5: no StrictMode, um frame ativo montado e nenhum depois do unmount', () => {
+  it('MT5: no StrictMode, uma assinatura no loop montado e nenhuma depois do unmount', () => {
     const frames = fakeFrames();
-    const { unmount } = renderWithGame(
-      <StrictMode>
-        <MultiplierText />
-      </StrictMode>,
-      { store: storeWith(running) },
+    const tracked = trackSubscriptions(
+      createFrameLoop({ clock: { serverNow: () => 0 } }),
     );
+    const { unmount } = renderWithGame(<MultiplierText />, {
+      store: storeWith(running),
+      frames: tracked.loop,
+      strict: true,
+    });
+    // Montou, desmontou e montou: só a segunda montagem segue assinada.
+    expect(tracked.live()).toBe(1);
     expect(frames.active()).toBe(1);
     frames.step(3);
-    expect(frames.active()).toBe(1);
+    expect(tracked.live()).toBe(1);
 
     unmount();
 
+    expect(tracked.live()).toBe(0);
     expect(frames.active()).toBe(0);
+  });
+
+  it('MT7: escreve o valor entregue pelo loop, não uma leitura própria do relógio', () => {
+    let emit: FrameListener = () => {};
+    const frames: FrameLoop = {
+      subscribe(listener) {
+        emit = listener;
+        return () => {};
+      },
+    };
+    const { container } = renderWithGame(<MultiplierText />, {
+      store: storeWith(running),
+      frames,
+      serverNow: 0,
+    });
+
+    emit(11_553);
+
+    expect(container.textContent).toBe('2,00x');
   });
 
   it('MT6: fica fora da leitura de tela: aria-hidden e sem aria-live', () => {

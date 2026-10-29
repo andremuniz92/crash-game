@@ -1,7 +1,8 @@
 import { render, type RenderResult } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { type ReactNode, StrictMode } from 'react';
 import { vi } from 'vitest';
 import type { Actions } from '../app/actions.js';
+import { createFrameLoop } from '../app/frame-loop.js';
 import { type GameDeps, GameProvider } from '../app/game-context.js';
 import { createGameStore } from '../store/game-store.js';
 
@@ -32,18 +33,26 @@ export function fakeActions(overrides: Partial<Actions> = {}): Actions {
   };
 }
 
-/** Renderiza dentro do GameProvider com store real e relógio controlado. */
+/**
+ * Renderiza dentro do GameProvider com store real e relógio controlado.
+ * `strict` põe o StrictMode na raiz, como no main.tsx: o React 19 só monta,
+ * desmonta e monta de novo os efeitos quando o StrictMode está na raiz, e
+ * não quando vem aninhado dentro do provider.
+ */
 export function renderWithGame(
   ui: ReactNode,
-  deps: Partial<GameDeps> & { serverNow?: number } = {},
+  deps: Partial<GameDeps> & { serverNow?: number; strict?: boolean } = {},
 ): RenderResult & GameDeps & { setServerNow: (value: number) => void } {
   let serverNow = deps.serverNow ?? 0;
+  const clock = deps.clock ?? { serverNow: () => serverNow };
   const value: GameDeps = {
     store: deps.store ?? createGameStore(),
     actions: deps.actions ?? fakeActions(),
-    clock: deps.clock ?? { serverNow: () => serverNow },
+    clock,
+    frames: deps.frames ?? createFrameLoop({ clock }),
   };
-  const result = render(<GameProvider value={value}>{ui}</GameProvider>);
+  const tree = <GameProvider value={value}>{ui}</GameProvider>;
+  const result = render(deps.strict ? <StrictMode>{tree}</StrictMode> : tree);
   return {
     ...result,
     ...value,

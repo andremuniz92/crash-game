@@ -6,34 +6,32 @@ import { displayMultiplier } from '../store/display-multiplier.js';
 
 /**
  * Quanto o cash out pagaria agora: aposta × multiplicador, arredondado para
- * baixo como no servidor (seção 6.3). Mesma técnica do MultiplierText: rAF
- * escrevendo no textContent, sem re-render. O valor é visual (aria-hidden):
- * o nome acessível do botão continua "Sacar".
+ * baixo como no servidor (seção 6.3). Mesma técnica do MultiplierText: assina
+ * o loop único (D89) e escreve no textContent, sem re-render; os dois usam o
+ * mesmo serverNow em cada frame. O valor é visual (aria-hidden): o nome
+ * acessível do botão continua "Sacar".
  */
 export function CashOutValue() {
-  const { store, clock } = useGame();
+  const { store, frames } = useGame();
   const element = useRef<HTMLSpanElement>(null);
 
-  useEffect(() => {
-    let frame = 0;
-    const draw = () => {
-      const node = element.current;
-      if (node) {
+  useEffect(
+    () =>
+      frames.subscribe((serverNow) => {
+        const node = element.current;
+        if (!node) return;
         const { round, myBet } = store.getState();
         let text = '';
         if (round?.status === 'RUNNING' && myBet?.status === 'PENDING') {
-          const multiplier = displayMultiplier(round, clock.serverNow());
+          const multiplier = displayMultiplier(round, serverNow);
           if (multiplier !== null) {
             text = ` ${formatCredits(Math.floor((myBet.amount * multiplier) / ONE_X))}`;
           }
         }
         node.textContent = text;
-      }
-      frame = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => cancelAnimationFrame(frame);
-  }, [store, clock]);
+      }),
+    [store, frames],
+  );
 
   return <span ref={element} aria-hidden="true" />;
 }

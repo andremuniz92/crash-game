@@ -4,6 +4,7 @@ import type { ServerClock } from '../net/server-clock.js';
 import type { GameState } from '../store/game-state.js';
 import type { GameStore } from '../store/game-store.js';
 import type { Actions } from './actions.js';
+import type { FrameLoop } from './frame-loop.js';
 
 /**
  * O que os componentes precisam, vindo do composition root (main.tsx). Nos
@@ -13,6 +14,8 @@ export interface GameDeps {
   store: GameStore;
   actions: Actions;
   clock: Pick<ServerClock, 'serverNow'>;
+  /** O único laço de animação (D89): quem desenha por frame assina aqui. */
+  frames: FrameLoop;
 }
 
 const GameContext = createContext<GameDeps | null>(null);
