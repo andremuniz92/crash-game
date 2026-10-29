@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Pipa">
+  <path d="M16 2 L27 14 L16 24 L5 14 Z" fill="#f2a541"/>
+  <path d="M16 2 L16 24 M5 14 L27 14" stroke="#0b1a33" stroke-width="1.5"/>
+  <path d="M16 24 C 13 26, 19 27, 15 30" fill="none" stroke="#2ec4b6" stroke-width="2" stroke-linecap="round"/>
+</svg>

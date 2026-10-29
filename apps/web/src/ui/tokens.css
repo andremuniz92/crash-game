@@ -1,0 +1,32 @@
+/*
+ * Tema da pipa (D81): céu de fim de tarde. Fontes do sistema, sem web font.
+ *
+ * Contraste (WCAG 2.1, mínimo AA de 4,5:1 para texto):
+ *   --text   sobre --sky-deep: 15,16:1    --text   sobre --sky: 12,68:1
+ *   --muted  sobre --sky-deep:  7,87:1    --muted  sobre --sky:  6,58:1
+ *   --danger sobre --sky-deep:  5,51:1    --danger sobre --sky:  4,61:1
+ *   --amber  sobre --sky-deep:  8,46:1    --amber  sobre --sky:  7,08:1
+ *   --teal   sobre --sky-deep:  8,01:1    --teal   sobre --sky:  6,70:1
+ *   --on-accent (= --sky-deep) sobre --teal: 8,01:1; sobre --amber: 8,46:1
+ * Texto claro sobre --teal daria 1,89:1: por isso os botões usam --on-accent.
+ */
+:root {
+  --sky-deep: #0b1a33;
+  --sky: #13294b;
+  --sky-line: #22406e;
+  --amber: #f2a541;
+  --teal: #2ec4b6;
+  --text: #f4efe6;
+  --muted: #9fb0c8;
+  --danger: #ef6461;
+  --on-accent: var(--sky-deep);
+
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --radius: 10px;
+  --gap: 16px;
+  /* Alvo de toque mínimo. */
+  --touch: 44px;
+
+  color-scheme: dark;
+}

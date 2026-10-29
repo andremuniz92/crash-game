@@ -1,0 +1,29 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--sky-deep);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.4;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+/* Visível só para leitores de tela. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

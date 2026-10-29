@@ -1,6 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
+import './ui/tokens.css';
+import './ui/base.css';
 import { createActions } from './app/actions.js';
 import { createSessionStorage, type KeyValueStorage } from './app/session.js';
 import { readWebConfig } from './config.js';
