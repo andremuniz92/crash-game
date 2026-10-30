@@ -1,0 +1,26 @@
+# Build e cabeçalhos do web no Netlify (D106, D107). Fica na raiz: o build
+# roda no monorepo, sem base directory (apps/web/src/deploy-config.test.ts).
+
+[build]
+  command = "pnpm --filter @crash/shared build && pnpm --filter @crash/web build"
+  publish = "apps/web/dist"
+
+[build.environment]
+  # Iguais ao .nvmrc e ao packageManager do package.json da raiz.
+  NODE_VERSION = "24.20.0"
+  PNPM_VERSION = "11.24.0"
+  # Origem da API no Railway (D102); o connect-src da CSP libera só ela.
+  VITE_API_URL = "https://crash-pipa-api.up.railway.app"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://crash-pipa-api.up.railway.app wss://crash-pipa-api.up.railway.app; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Os nomes em /assets/ levam o hash do conteúdo: podem ficar em cache para sempre.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
