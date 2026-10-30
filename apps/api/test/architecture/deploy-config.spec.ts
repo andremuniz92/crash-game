@@ -48,6 +48,13 @@ function only(stage: Instruction[], keyword: string): string {
   return found[0]!.args;
 }
 
+/** Argumentos de uma instrução em forma exec (array JSON), já lidos. */
+function execForm(stage: Instruction[], keyword: string): unknown {
+  const args = only(stage, keyword);
+  expect(args.startsWith('['), `${keyword} em forma exec`).toBe(true);
+  return JSON.parse(args);
+}
+
 describe('configuração do deploy (D103, D104)', () => {
   it('DC1: todo FROM usa node:<.nvmrc>-alpine ou um estágio anterior', () => {
     const node = `node:${readRepoFile('.nvmrc').trim()}-alpine`;
@@ -73,8 +80,8 @@ describe('configuração do deploy (D103, D104)', () => {
     const stage = finalStage(all);
 
     expect(only(stage, 'USER')).toBe('node');
-    expect(JSON.parse(only(stage, 'ENTRYPOINT'))).toEqual(['/sbin/tini', '--']);
-    expect(JSON.parse(only(stage, 'CMD'))).toEqual(['node', 'dist/main.js']);
+    expect(execForm(stage, 'ENTRYPOINT')).toEqual(['/sbin/tini', '--']);
+    expect(execForm(stage, 'CMD')).toEqual(['node', 'dist/main.js']);
     expect(
       all.some(
         (i) => i.keyword === 'RUN' && /\bapk add\b.*\btini\b/.test(i.args),

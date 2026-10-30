@@ -43,4 +43,12 @@ describe('cena num chunk à parte (D94)', () => {
       );
     expect(offenders).toEqual([]);
   });
+
+  it('UE1: a entrada do chunk da cena importa pixi.js/unsafe-eval, para a CSP sem unsafe-eval (D107)', () => {
+    // Sem o módulo, o init do renderer lança erro sob a CSP, e o fallback da
+    // D92 esconderia a pipa em silêncio. O LZ4 garante que ele fica no chunk.
+    const entry = readFileSync(join(PIXI_DIR, 'scene-module.ts'), 'utf8');
+
+    expect(staticImports(entry)).toContain('pixi.js/unsafe-eval');
+  });
 });
