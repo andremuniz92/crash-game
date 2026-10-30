@@ -186,25 +186,34 @@ A conferência do SHA-256 da seed usa o `crypto.subtle`, que só existe em conte
 `localhost`). Fora dele, a verificação aparece como indisponível, e o resto do jogo funciona: as
 `Idempotency-Key` saem do `crypto.getRandomValues`, que existe também em HTTP (D96).
 
-**Testando num celular** (D98). O front abre pelo IP da rede local (o Vite escuta em `0.0.0.0`),
-mas essa é outra origem, e a API recusa. Além disso, no celular `localhost` é o próprio celular,
-então o front também precisa saber o IP da API. Troque temporariamente as duas variáveis no `.env`:
+**Testando num celular** (D98). O front abre pelo IP da rede local, mas essa é outra origem, e a API
+recusa. Além disso, no celular `localhost` é o próprio celular, então o front também precisa saber
+o IP da API. Não é preciso editar o `.env`: as variáveis passadas por `-e` no
+`docker compose exec` valem mais que as do arquivo, tanto no Node (`--env-file-if-exists`) quanto
+no Vite. Com o `pnpm dev` parado, a partir da raiz, no host:
 
 ```sh
-WEB_ORIGIN=http://<IP>:5173
-VITE_API_URL=http://<IP>:3000
+IP=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i <= NF; i++) if ($i == "src") print $(i + 1)}')
+# Terminal 1: só a API, aceitando a origem do IP
+docker compose -f .ai-jail/compose.yml exec -e WEB_ORIGIN=http://$IP:5173 claude \
+  sh -c 'pnpm --filter @crash/shared build && pnpm --filter @crash/api dev'
+# Terminal 2 (defina o IP de novo): build de produção apontando para o IP, e o preview
+docker compose -f .ai-jail/compose.yml exec -e VITE_API_URL=http://$IP:3000 claude \
+  pnpm --filter @crash/web build
+docker compose -f .ai-jail/compose.yml exec claude \
+  pnpm --filter @crash/web preview --host --port 5173 --strictPort
 ```
 
-Reinicie o `pnpm dev` e abra `http://<IP>:5173` no celular. Para medir desempenho, use o build de
-produção, e não o dev: no lugar do `pnpm dev`, suba só a API (`pnpm --filter @crash/shared build`
-e `pnpm --filter @crash/api dev`) e, em outro terminal, rode
-`pnpm --filter @crash/web build && pnpm --filter @crash/web preview --host --port 5173 --strictPort`.
-Ao terminar, volte as duas variáveis para `http://localhost:5173` e `http://localhost:3000`. Pelo
-IP, a verificação fica indisponível (não há contexto seguro), e apostar e sacar funcionam. O
-firewall do host precisa liberar as portas 3000 e 5173 na rede local.
+Abra `http://<IP>:5173` no celular. Para medir desempenho, use sempre esse build de produção, e
+não o dev. Ao terminar, pare os dois terminais e refaça o build com
+`VITE_API_URL=http://localhost:3000`, porque a `dist` fica com o IP embutido. Pelo IP, a
+verificação fica indisponível (não há contexto seguro), e apostar e sacar funcionam. No Linux, as
+portas publicadas pelo Docker passam por fora do ufw; no macOS e no Windows, o firewall pode pedir
+para liberar as portas 3000 e 5173.
 
-**Linha de base do bundle (fim do M4).** `vite build` com `VITE_API_URL` definida; é o "antes" das
-medições da seção 11.3, que ficam para o M7.
+**Linha de base do bundle (fim do M4).** `vite build` com `VITE_API_URL` definida, antes da cena
+PixiJS. As medições da seção 11.3 estão em [Desempenho](#desempenho-seção-113); o M7 só as repete
+no deploy.
 
 | Arquivo      | Tamanho   | gzip     |
 | ------------ | --------- | -------- |
@@ -215,29 +224,35 @@ medições da seção 11.3, que ficam para o M7.
 ### Desempenho (seção 11.3)
 
 Medido na rede local (D97, D98); o M7 repete as medições no deploy. "Antes" é a versão simples,
-com o Pixi no chunk principal e `resolution = devicePixelRatio`; "Opt 1" e "Opt 2" são as
-otimizações da D94 e da D93, cada uma medida sobre a anterior.
+com o Pixi no chunk principal e `resolution = devicePixelRatio`. Depois vieram duas otimizações,
+e cada uma mexe numa coisa só: a 1 (D94) no carregamento, levando a cena para um chunk à parte, e a
+2 (D93, D101) na resolução do renderer, pela escala do palco. Por isso o bundle tem uma linha por
+otimização, e o carregamento e o fps foram medidos uma vez, com as duas juntas, em `593ccb2`
+(a otimização 2 com a correção da F9b, que faz o renderer já iniciar na resolução do palco).
 
 **Ambiente.** Host: Debian, Chromium 156.0.0.0, Lighthouse 13.5.0. Celular: iPhone 11, iOS
-18.0.1, Safari 18.0.1, 60 Hz, DPR 2, retrato, bateria 95 → 92 %, fora da tomada, Modo de Pouca
-Energia desligado, Wi-Fi 2,4 GHz. API e preview no AI Jail, build de
+18.0.1, Safari 18.0.1, 60 Hz, DPR 2, retrato, bateria 95 → 92 % no "antes" e 62 → 61 % no
+"depois", fora da tomada, Modo de Pouca Energia desligado, Wi-Fi 2,4 GHz. API e preview no AI Jail, build de
 produção (`VITE_API_URL=http://localhost:3000` no host; o IP da rede local no celular, D98). Na
 medição de fps, a API roda com `BETTING_MS=3000` e `PAUSE_MS=1000` em todas as versões, para
 encurtar a espera pela rodada longa; isso não muda nada durante a `RUNNING`.
 
 **Bundle** (`vite build`, gzip). "JS inicial" é o que a primeira carga baixa: o `index` e os
-chunks do Pixi que ele pré-carrega por `modulepreload`. "Sob demanda" é o que só chega depois:
-`browserAll` e `init` no init do renderer, e o medidor só com `?fps`.
+chunks do Pixi que ele pré-carrega por `modulepreload`. "Sob demanda" é o que só chega depois: a
+cena e os chunks do Pixi pelo `import()` (a partir da Opt 1), `browserAll` e `init` no init do
+renderer, e o medidor só com `?fps`.
 
-| Versão      | Commit  | JS inicial | Chunks sob demanda                | CSS     | Total inicial |
-| ----------- | ------- | ---------- | --------------------------------- | ------- | ------------- |
-| Fim do M4   | 50f9534 | 79,04 kB   | —                                 | 2,05 kB | 81,40 kB      |
-| Antes (M5)  | 43eecc9 | 214,97 kB  | renderer: 16,04 kB · fps: 1,16 kB | 2,14 kB | 217,54 kB     |
-| Opt 1 (D94) |         |            |                                   |         |               |
-| Opt 2 (D93) |         |            |                                   |         |               |
+| Versão      | Commit  | JS inicial | Chunks sob demanda                                  | CSS     | Total inicial |
+| ----------- | ------- | ---------- | --------------------------------------------------- | ------- | ------------- |
+| Fim do M4   | 50f9534 | 79,04 kB   | —                                                   | 2,05 kB | 81,40 kB      |
+| Antes (M5)  | 43eecc9 | 214,97 kB  | renderer: 16,04 kB · fps: 1,16 kB                   | 2,14 kB | 217,54 kB     |
+| Opt 1 (D94) | 575d5f1 | 82,49 kB   | cena: 132,87 kB · renderer: 16,04 kB · fps: 1,16 kB | 2,14 kB | 84,94 kB      |
+| Opt 2 (D93) | 593ccb2 | 82,71 kB   | cena: 132,89 kB · renderer: 16,04 kB · fps: 1,16 kB | 2,15 kB | 85,17 kB      |
 
 "Total inicial" soma JS inicial, CSS e `index.html`. No "Antes", o `index` sozinho tem 500,67 kB
-(153,17 kB gzip), e o Vite avisa que passou de 500 kB.
+(153,17 kB gzip), e o Vite avisa que passou de 500 kB. Com a Opt 1, o `index` cai para 257,27 kB
+(82,49 kB gzip), o aviso some e o `index.html` deixa de pré-carregar chunks do Pixi; o total
+baixado praticamente não muda, só sai da carga inicial.
 
 <details>
 <summary>Saída do <code>vite build</code></summary>
@@ -257,28 +272,76 @@ dist/assets/RenderTargetSystem-BA9QXhSt.js      77.97 kB │ gzip:  22.08 kB
 dist/assets/CanvasPool-B6fibMua.js             112.99 kB │ gzip:  34.45 kB
 dist/assets/index-De6SpbJm.js                  500.67 kB │ gzip: 153.17 kB
 (aviso do Vite: chunks maiores que 500 kB depois da minificação)
+
+Depois, Opt 1 + 2 (593ccb2), vite v8.3.5, 803 módulos, built in 671ms:
+dist/index.html                                   0.51 kB │ gzip:  0.31 kB
+dist/assets/index-Iha98J9K.css                    7.71 kB │ gzip:  2.15 kB
+dist/assets/WebGLRenderer-Dp3dUzPX.js             0.05 kB │ gzip:  0.07 kB
+dist/assets/CanvasRenderer-DnntYD8p.js            0.06 kB │ gzip:  0.08 kB
+dist/assets/WebGPURenderer-Cs-cuGYZ.js            0.06 kB │ gzip:  0.08 kB
+dist/assets/webworkerAll-oDZsC-CO.js              0.06 kB │ gzip:  0.07 kB
+dist/assets/getTextureBatchBindGroup-BhTE4MlI.js  0.34 kB │ gzip:  0.27 kB
+dist/assets/fps-meter-BvvbcZER.js                 2.12 kB │ gzip:  1.16 kB
+dist/assets/canvasUtils-gs4QfX6E.js               6.01 kB │ gzip:  2.05 kB
+dist/assets/getTexelRangeRects-Bwna4Rz1.js       11.31 kB │ gzip:  2.97 kB
+dist/assets/init-BE3vo9f6.js                     15.18 kB │ gzip:  4.76 kB
+dist/assets/browserAll-C_KRvq9o.js               43.48 kB │ gzip: 11.28 kB
+dist/assets/RenderTargetSystem-ClKI7oTn.js       77.97 kB │ gzip: 22.08 kB
+dist/assets/CanvasPool-CtcOX-Bi.js              112.28 kB │ gzip: 34.17 kB
+dist/assets/scene-module-DV1Bxeqw.js            244.22 kB │ gzip: 71.35 kB
+dist/assets/index-Dzsa0doN.js                   257.89 kB │ gzip: 82.71 kB
+(sem o aviso de chunk acima de 500 kB)
 ```
 
 </details>
 
-**Carregamento** (mediana de 5, todas as execuções sem cache e sem sessão). Lighthouse no modo
+**Carregamento** (mediana de 5, todas as execuções sem cache e sem sessão). A medição usa o
+Chrome ou o Chromium, porque o Firefox não tem Lighthouse nem throttling de CPU. Lighthouse no modo
 Navigation, Mobile (Moto G Power emulado), só Performance, com throttling aplicado pelo DevTools
 (Slow 4G + CPU 4×) e "Clear storage". Network "Fast 4G" com "Disable cache", "Clear site data"
 antes de cada carga e sem throttling de CPU. **Durante o Lighthouse, a aba Network precisa estar em
 "No throttling":** o throttling dela se soma ao do Lighthouse, e uma primeira série com "Fast 4G"
 esquecido ativo saiu com FCP de 0,8 s e foi descartada.
 
-| Versão | Score | FCP   | LCP   | TBT    | `app:first-render` | `scene:first-frame` | Fast 4G: `app:first-render` | Fast 4G: `scene:first-frame` | Transferido |
-| ------ | ----- | ----- | ----- | ------ | ------------------ | ------------------- | --------------------------- | ---------------------------- | ----------- |
-| Antes  | 89    | 2,6 s | 2,6 s | 160 ms | 2615 ms            | 3470 ms             | 665 ms                      | 962 ms                       | 239 kB      |
-| Opt 1  |       |       |       |        |                    |                     |                             |                              |             |
-| Opt 2  |       |       |       |        |                    |                     |                             |                              |             |
+| Versão                      | Score | FCP   | LCP   | TBT    | `app:first-render` | `scene:first-frame` | Fast 4G: `app:first-render` | Fast 4G: `scene:first-frame` | Transferido |
+| --------------------------- | ----- | ----- | ----- | ------ | ------------------ | ------------------- | --------------------------- | ---------------------------- | ----------- |
+| Antes (43eecc9)             | 89    | 2,6 s | 2,6 s | 160 ms | 2615 ms            | 3470 ms             | 665 ms                      | 962 ms                       | 239 kB      |
+| Depois, Opt 1 + 2 (593ccb2) | 94    | 1,8 s | 1,8 s | 170 ms | 1815 ms            | 4710 ms             | 482 ms                      | 1277 ms                      | 240 kB      |
 
 **Leitura do "Antes".** Com Slow 4G e CPU 4×, o jogo só fica jogável (`app:first-render`) em
 ~2,6 s, acima da meta de 2 s da seção 11.3, e a cena aparece ~0,9 s depois. Com Fast 4G e sem
 limitar a CPU, a meta é atingida (~0,67 s). O aviso de chunk acima de 500 kB e os 86 KiB de JS não
 usado apontados pelo Lighthouse ("Reduce unused JavaScript", em todas as execuções) são o alvo da
 otimização 1 (D94).
+
+**Leitura do "Depois".** O jogo fica jogável mais cedo: com Slow 4G e CPU 4×, o `app:first-render`
+cai de 2615 para 1815 ms (−0,8 s) e passa a cumprir a meta de 2 s da seção 11.3; o FCP cai de 2,6
+para 1,8 s, e o score sobe de 89 para 94. Com Fast 4G, o `app:first-render` cai de 665 para 482 ms.
+
+**A troca consciente da otimização 1.** A cena aparece mais tarde: o `scene:first-frame` sobe de
+3470 para 4710 ms no Lighthouse (+1,24 s) e de 962 para 1277 ms no Fast 4G (+315 ms). Antes, o
+`index` e os chunks do Pixi chegavam em paralelo, pelo `modulepreload`. Agora, o caminho até o
+primeiro quadro tem duas idas e voltas a mais, em série, depois de o app montar: o `import()` da
+cena pede o `scene-module` e os chunks do Pixi; o `autoDetectRenderer` do Pixi faz um `import()`
+do `WebGLRenderer`, que com a cena num chunk próprio virou uma fachada de 0,07 kB que só
+reexporta o código já baixado, mas custa uma requisição; e o init do renderer pede o `browserAll`
+e o `init`. Com o throttling do Lighthouse, cada ida e volta custa ~0,56 s de latência, por isso a
+diferença é bem maior que no Fast 4G. A troca é aceita: a meta de carregamento vale para a primeira
+tela jogável (D94), e o texto e o painel não esperam a cena. A F9b tirou ~0,2 s do
+`scene:first-frame` no Lighthouse (4946 ms em `653acd2` → 4710 ms em `593ccb2`), porque o
+renderer deixou de iniciar em 1280×720 para ser redimensionado logo depois. As duas idas e voltas
+a mais são o alvo de duas candidatas do M6 (CLAUDE.md, seção 13).
+
+**Thread principal e TBT não entram como conclusão.** A thread principal varia entre execuções
+(7,0 a 9,8 s no "depois"; 4,0 a 4,7 s no "antes"), por uma causa não isolada: uma execução que caiu
+inteira em `BETTING` também passou de 9 s. O TBT acompanha (160 ms antes, 170 ms depois). As
+conclusões ficam com FCP, `app:first-render`, `scene:first-frame`, bundle e backing.
+
+**"Forced reflow" (novo no "depois").** Pela leitura do código, a provável origem é o
+`CanvasObserver` do Pixi (vem com o `browserAll`), que lê `getBoundingClientRect` quando o canvas
+entra no DOM e quando o `canvas.width` muda num resize do palco; não foi confirmado por trace. O
+código do projeto não lê layout. O "Reduce unused JavaScript" (~86 KiB) continua, agora no chunk da
+cena: o Pixi traz mais do que a cena usa.
 
 <details>
 <summary>Execuções do carregamento</summary>
@@ -309,23 +372,54 @@ Network "Fast 4G", Antes, em ms (exceto Finish e Transferido). Cada carga transf
 | 5        | 668         | 668 | 663                | 942                 | 623              | 623  | 1,14 s | 239 kB      |
 | Mediana  | 664         | 676 | 665                | 962                 | 632              | 632  | 1,14 s | 239 kB      |
 
+Lighthouse, Depois (593ccb2). Em todas as execuções, "Forced reflow" e "Reduce unused JavaScript"
+(~86 KiB). A execução 3 caiu inteira em `BETTING` (filmstrip só com 1,00x).
+
+| Execução | Score | FCP   | LCP   | TBT    | CLS   | SI    | `app:first-render` | `scene:first-frame` | JS exec | Main thread | Long tasks |
+| -------- | ----- | ----- | ----- | ------ | ----- | ----- | ------------------ | ------------------- | ------- | ----------- | ---------- |
+| 1        | 92    | 1,9 s | 1,9 s | 230 ms | 0,094 | 2,3 s | 1872,90 ms         | 4855,75 ms          | 3,7 s   | 9,1 s       | 2          |
+| 2        | 94    | 1,8 s | 1,8 s | 160 ms | 0,095 | 2,2 s | 1800,49 ms         | 4709,78 ms          | 2,7 s   | 7,0 s       | 2          |
+| 3        | 91    | 1,9 s | 1,9 s | 240 ms | 0,094 | 2,3 s | 1894,05 ms         | 4782,82 ms          | 3,9 s   | 9,8 s       | 2          |
+| 4        | 94    | 1,8 s | 1,8 s | 170 ms | 0,094 | 2,2 s | 1800,13 ms         | 4637,33 ms          | 3,2 s   | 7,9 s       | 2          |
+| 5        | 94    | 1,8 s | 1,8 s | 170 ms | 0,094 | 2,2 s | 1814,97 ms         | 4677,76 ms          | 3,2 s   | 7,9 s       | 2          |
+| Mediana  | 94    | 1,8 s | 1,8 s | 170 ms | 0,094 | 2,2 s | 1815 ms            | 4710 ms             | 3,2 s   | 7,9 s       | 2          |
+
+Network "Fast 4G", Depois (593ccb2), em ms (exceto Finish e Transferido). Cada carga transfere
+240 kB, de 779 kB de recursos, em 16 requisições. O HTML só pede o `index` e o CSS; o
+`scene-module` e os 5 chunks do Pixi chegam pelo `import()` (o preload do Vite), o
+`scene-module` pede o `WebGLRenderer`, e depois vêm `browserAll` e `init`.
+
+| Execução | first-paint | FCP | `app:first-render` | `scene:first-frame` | DOMContentLoaded | Load | Finish | Transferido |
+| -------- | ----------- | --- | ------------------ | ------------------- | ---------------- | ---- | ------ | ----------- |
+| 1        | 492         | 504 | 498                | 1281                | 475              | 475  | 1,19 s | 240 kB      |
+| 2        | 484         | 492 | 480                | 1277                | 464              | 464  | 1,18 s | 240 kB      |
+| 3        | 476         | 496 | 482                | 1261                | 463              | 463  | 1,18 s | 240 kB      |
+| 4        | 492         | 496 | 489                | 1282                | 469              | 469  | 1,19 s | 240 kB      |
+| 5        | 488         | 488 | 482                | 1259                | 463              | 463  | 1,18 s | 240 kB      |
+| Mediana  | 488         | 496 | 482                | 1277                | 464              | 464  | 1,18 s | 240 kB      |
+
 </details>
 
 **fps no celular** (iPhone 11, `?fps`; média e lentos da rodada inteira, 1% low dos últimos 10 s;
 lidos na linha da rodada do painel, por print de tela, sem gravação)
 
-| Versão | Rodada | Duração | Média | 1% low | Lentos (> 50 ms) |
-| ------ | ------ | ------- | ----- | ------ | ---------------- |
-| Antes  | curta  | 17,7 s  | 60,0  | 55     | 0                |
-| Antes  | longa  | 71,2 s  | 59,9  | 53     | 0                |
-| Opt 1  | curta  |         |       |        |                  |
-| Opt 1  | longa  |         |       |        |                  |
-| Opt 2  | curta  |         |       |        |                  |
-| Opt 2  | longa  |         |       |        |                  |
+| Versão                      | Rodada | Duração | Média | 1% low | Lentos (> 50 ms) |
+| --------------------------- | ------ | ------- | ----- | ------ | ---------------- |
+| Antes (43eecc9)             | curta  | 17,7 s  | 60,0  | 55     | 0                |
+| Antes (43eecc9)             | longa  | 71,2 s  | 59,9  | 53     | 0                |
+| Depois, Opt 1 + 2 (593ccb2) | curta  | 13,3 s  | 60,0  | 51     | 0                |
+| Depois, Opt 1 + 2 (593ccb2) | longa  | 83,2 s  | 59,5  | 55     | 2                |
 
 **Leitura do "Antes".** O iPhone 11 já cumpre a meta de 60 fps da seção 11.3, inclusive na rodada
 longa, com o rastro esticado. O 1% low de 33 na rodada de 2,9 s (abaixo) vem da janela de 10 s, que
 pega a transição entre rodadas; com 0 frames lentos, é uma queda pontual.
+
+**Leitura do "Depois".** O fps no iPhone 11 ficou igual ao "antes": 60 fps, inclusive numa rodada
+de 83 s que chegou a 147x, agora com o backing do canvas ~11× menor (Opt 2, tabela abaixo). A meta
+de 60 fps da seção 11.3 segue cumprida. Na rodada longa, a página foi aberta com a rodada em
+andamento: a linha cobre só os frames depois do carregamento, e os 2 frames lentos provavelmente
+vieram do carregamento da cena. A rodada intermediária, medida inteira com a página carregada, teve
+0 lentos.
 
 <details>
 <summary>Rodadas medidas</summary>
@@ -341,7 +435,34 @@ Antes (43eecc9):
 | intermediária | 9,92x  | 38,3 s  | 60,0  | 0                | 51                    |
 | longa         | 71,60x | 71,2 s  | 59,9  | 0                | 53                    |
 
+Depois, Opt 1 + 2 (593ccb2). Na longa, a página foi aberta durante a rodada: a duração é a da
+rodada inteira, mas a média e os lentos contam só os frames depois do carregamento.
+
+| Rodada        | Crash   | Duração | Média | Lentos (> 50 ms) | 1% low (últimos 10 s) |
+| ------------- | ------- | ------- | ----- | ---------------- | --------------------- |
+| curta         | 2,22x   | 13,3 s  | 60,0  | 0                | 51                    |
+| intermediária | 14,64x  | 44,8 s  | 59,8  | 0                | 43                    |
+| longa         | 147,01x | 83,2 s  | 59,5  | 2                | 55                    |
+
 </details>
+
+**Backing do canvas** (D101; `canvas.width × canvas.height` no modo responsivo do Firefox, com uma
+rodada em andamento). Com a resolução pela escala do palco, o renderer desenha só os pixels físicos
+que o palco ocupa, em vez de 1280×720 vezes o DPR.
+
+| Versão             | 414×896, DPR 2                       | 412×915, DPR 3                       |
+| ------------------ | ------------------------------------ | ------------------------------------ |
+| Antes (`575d5f1`)  | 2560 × 1440 = 3.686.400 px           | 3840 × 2160 = 8.294.400 px           |
+| Opt 2 (`653acd2`)¹ | 764 × 430 = 328.520 px (11,2× menos) | 760 × 428 = 325.280 px (25,5× menos) |
+
+No desktop, o backing acompanha o zoom: 832×468 a 100% (DPR 1, com o palco limitado pelo layout a
+~832 px CSS) e 1184×666 a 200% (DPR 2). Em DPR 2, o backing fica 1:1 com os pixels físicos; em DPR
+3, fica abaixo deles, pelo teto de 2 no DPR (D93). ¹ Medido em `653acd2`; a correção da F9b
+(`593ccb2`) não muda a resolução final, só a do init.
+
+**Console do Firefox.** Três avisos aparecem e não são do projeto: "WebGL context was lost" vem do
+`isWebGLSupported` do Pixi, que cria e descarta um contexto de teste; "texImage: Alpha-premult…" e
+"lazy initialization" são avisos de desempenho do WebGL do Firefox.
 
 ### Scripts da raiz
 
@@ -482,6 +603,15 @@ publicado antes do crash (D86); o passo 2 não é recalculado no front (D80).
 - **A verificação no front só prova a fixação da seed para as rodadas que a página viu antes do
   crash** (D86). Para uma rodada que só apareceu pelo histórico, o painel avisa e compara com o hash
   informado na própria verificação.
+- **Sem WebGL nem Canvas 2D, o jogo fica só com texto.** Se o renderer não inicia, ou se o chunk da
+  cena falha na rede, a pipa não aparece; o multiplicador em texto, o painel e o histórico
+  continuam funcionando (D92, D94).
+- **A verificação fica indisponível pelo IP da rede local em HTTP** (D98). O `crypto.subtle` só
+  existe em contexto seguro (HTTPS ou `localhost`); apostar e sacar continuam funcionando (D96).
+- **A resolução do canvas só muda quando o tamanho do palco muda** (D93). Arrastar a janela para um
+  monitor com outro DPR, sem mudar o tamanho CSS, mantém a resolução antiga até o próximo resize.
+- **O antialias é decidido uma vez, quando o renderer inicia** (D93): desligado com DPR 2 ou mais,
+  em que o backing já fica 1:1 com os pixels físicos.
 - **Favicon só em SVG.** Chrome, Edge e Firefox usam o SVG; o Safari pode pedir `/favicon.ico` e
   mostrar um 404 no console.
 
