@@ -15,6 +15,7 @@ import { GameStage } from './GameStage.js';
 import type {
   RendererOptions,
   SceneEnvironment,
+  SceneModule,
   SceneRenderer,
 } from './mount-scene.js';
 import { MultiplierText } from './MultiplierText.js';
@@ -55,6 +56,11 @@ function deferred<T>() {
     reject = rej;
   });
   return { promise, resolve, reject };
+}
+
+/** Deixa as promessas já resolvidas (carregador, init) seguirem adiante. */
+async function settle() {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
 }
 
 /** Renderer fake: canvas do jsdom, render e destroy espionados. */
@@ -110,13 +116,19 @@ interface Drawn {
   rotation: number;
 }
 
-function setup({
+/**
+ * Monta o palco com a cena. Com `loader: 'ready'`, o carregador da cena
+ * (D94) já resolveu quando o setup devolve; com `'pending'`, o teste decide
+ * quando ele resolve ou rejeita, por `load`.
+ */
+async function setup({
   round = running as RoundDto | null,
   serverNow = STARTED_AT + 5_000,
   reduced = false,
   strict = false,
   withText = false,
   clock,
+  loader = 'ready',
 }: {
   round?: RoundDto | null;
   serverNow?: number;
@@ -124,6 +136,7 @@ function setup({
   strict?: boolean;
   withText?: boolean;
   clock?: { serverNow: () => number };
+  loader?: 'ready' | 'pending';
 } = {}) {
   const frames = fakeFrames();
   fakeResizeObserver();
@@ -142,8 +155,10 @@ function setup({
     return init.promise;
   });
   const media = fakeMedia(reduced);
+  const load = deferred<SceneModule>();
+  const loadScene = vi.fn(() => load.promise);
   const environment: SceneEnvironment = {
-    createRenderer,
+    loadScene,
     matchMedia: () => media.query,
     devicePixelRatio: () => 3,
   };
@@ -164,9 +179,12 @@ function setup({
     };
   });
 
+  const module: SceneModule = { createRenderer, buildScene: build };
+  if (loader === 'ready') load.resolve(module);
+
   const result = renderWithGame(
     <GameStage>
-      <GameCanvas buildScene={build} />
+      <GameCanvas />
       {withText && <MultiplierText />}
     </GameStage>,
     {
@@ -177,13 +195,14 @@ function setup({
       strict,
     },
   );
+  await act(settle);
 
   /** Resolve o init de número `index` com um renderer fake novo. */
   async function resolveInit(index = 0) {
     const fake = fakeRenderer();
     await act(async () => {
       inits[index]?.resolve(fake.renderer);
-      await Promise.resolve();
+      await settle();
     });
     return fake;
   }
@@ -196,6 +215,9 @@ function setup({
     media,
     inits,
     createRenderer,
+    load,
+    loadScene,
+    module,
     build,
     drawn,
     draw,
@@ -210,7 +232,7 @@ function setup({
 
 describe('GameCanvas (D89, D91, D92)', () => {
   it('GC1: depois do init, o canvas entra no palco fora da leitura de tela e sem capturar cliques', async () => {
-    const t = setup();
+    const t = await setup();
     const { renderer } = await t.resolveInit();
 
     expect(t.canvases()).toHaveLength(1);
@@ -230,7 +252,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
   });
 
   it('GC1b: o primeiro quadro sai assim que o init resolve, sem esperar frame', async () => {
-    const t = setup({ round: running });
+    const t = await setup({ round: running });
     const { renderer } = await t.resolveInit();
 
     expect(renderer.render).toHaveBeenCalledTimes(1);
@@ -240,7 +262,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
   });
 
   it('GC2: dispose antes do init: nada entra no DOM e o renderer é destruído uma vez', async () => {
-    const t = setup();
+    const t = await setup();
     t.unmount();
     const { renderer } = await t.resolveInit();
 
@@ -254,7 +276,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
 
   it('GC2b: dispose e depois o init rejeita: sem canvas, sem aviso e sem rejeição solta', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const t = setup();
+    const t = await setup();
     t.unmount();
     await act(async () => {
       t.inits[0]?.reject(new Error('sem WebGL'));
@@ -267,23 +289,21 @@ describe('GameCanvas (D89, D91, D92)', () => {
     expect(t.loop.live()).toBe(0);
   });
 
-  it('GC3: no StrictMode, uma cena viva e a da primeira montagem destruída', async () => {
-    const t = setup({ strict: true });
-    expect(t.createRenderer).toHaveBeenCalledTimes(2);
-    const first = await t.resolveInit(0);
-    const second = await t.resolveInit(1);
+  it('GC3: no StrictMode, a montagem descartada não cria renderer, e uma cena fica viva', async () => {
+    const t = await setup({ strict: true });
+    expect(t.loadScene).toHaveBeenCalledTimes(2);
+    expect(t.createRenderer).toHaveBeenCalledTimes(1);
+    const { renderer } = await t.resolveInit(0);
 
     expect(t.canvases()).toHaveLength(1);
-    expect(second.renderer.canvas.isConnected).toBe(true);
-    expect(first.renderer.destroy.mock.calls).toEqual([[{ removeView: true }]]);
-    expect(second.renderer.destroy).not.toHaveBeenCalled();
+    expect(renderer.canvas.isConnected).toBe(true);
+    expect(renderer.destroy).not.toHaveBeenCalled();
     expect(t.loop.live()).toBe(1);
   });
 
   it('GC4: o unmount desfaz todas as assinaturas e destrói renderer, palco e contexts', async () => {
-    const t = setup({ strict: true });
-    await t.resolveInit(0);
-    const { renderer, listeners } = await t.resolveInit(1);
+    const t = await setup({ strict: true });
+    const { renderer, listeners } = await t.resolveInit(0);
     expect(t.store.live()).toBe(1);
     expect(t.loop.live()).toBe(1);
     expect(t.media.listeners.size).toBe(1);
@@ -317,7 +337,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
   it('GC5: por frame, uma leitura do relógio, o draw e depois o render', async () => {
     let now = STARTED_AT + 5_000;
     const clock = { serverNow: vi.fn(() => now) };
-    const t = setup({ clock, withText: true });
+    const t = await setup({ clock, withText: true });
     const { renderer } = await t.resolveInit();
     clock.serverNow.mockClear();
     t.draw.mockClear();
@@ -336,7 +356,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
 
   it('GC6: init rejeitado: sem canvas, aviso no console e o texto continua', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const t = setup({ withText: true });
+    const t = await setup({ withText: true });
     const error = new Error('sem WebGL nem Canvas');
     await act(async () => {
       t.inits[0]?.reject(error);
@@ -354,7 +374,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
   });
 
   it('GC7: com o contexto perdido, não desenha e esconde o canvas até voltar', async () => {
-    const t = setup();
+    const t = await setup();
     const { renderer } = await t.resolveInit();
     renderer.render.mockClear();
 
@@ -370,7 +390,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
   });
 
   it('GC8: segue o prefers-reduced-motion, inclusive quando ele muda', async () => {
-    const t = setup({ round: betting, serverNow: 600, reduced: true });
+    const t = await setup({ round: betting, serverNow: 600, reduced: true });
     await t.resolveInit();
     expect(t.drawn.at(-1)).toEqual({ phase: 'BETTING', rotation: 0 });
 
@@ -396,7 +416,8 @@ describe('GameCanvas (D89, D91, D92)', () => {
         store,
         clock: { serverNow: () => now },
         scene: {
-          createRenderer: () => init.promise,
+          loadScene: () =>
+            Promise.resolve({ createRenderer: () => init.promise, buildScene }),
           matchMedia: () => fakeMedia(false).query,
           devicePixelRatio: () => 1,
         },
@@ -405,7 +426,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
     void setServerNow;
     await act(async () => {
       init.resolve(fakeRenderer().renderer);
-      await Promise.resolve();
+      await settle();
     });
     commits.mockClear();
 
@@ -418,7 +439,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
   });
 
   it('GC12: a rodada vem da assinatura: CRASHED → BETTING sem remontar a cena', async () => {
-    const t = setup({ round: crashed, serverNow: STARTED_AT + 60_000 });
+    const t = await setup({ round: crashed, serverNow: STARTED_AT + 60_000 });
     await t.resolveInit();
     t.frames.step();
     expect(t.drawn.at(-1)?.phase).toBe('CRASHED');
@@ -442,9 +463,8 @@ describe('GameCanvas (D89, D91, D92)', () => {
   });
 
   it('GC10: scene:first-frame é marcado uma vez, logo depois do primeiro render', async () => {
-    const t = setup({ strict: true });
-    await t.resolveInit(0);
-    const { renderer } = await t.resolveInit(1);
+    const t = await setup({ strict: true });
+    const { renderer } = await t.resolveInit(0);
     const once = vi.mocked(t.marks.once);
     const firstFrame = () =>
       once.mock.calls.filter(([name]) => name === 'scene:first-frame');
@@ -459,5 +479,58 @@ describe('GameCanvas (D89, D91, D92)', () => {
     for (let i = 0; i < 10; i++) t.frames.step();
 
     expect(firstFrame()).toHaveLength(1);
+  });
+});
+
+describe('GameCanvas com a cena por import dinâmico (D94)', () => {
+  it('LZ2: carregador rejeitado (chunk da cena falhou): sem canvas, aviso no console e o texto continua', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const t = await setup({ withText: true, loader: 'pending' });
+    const error = new Error('Failed to fetch dynamically imported module');
+    await act(async () => {
+      t.load.reject(error);
+      await settle();
+    });
+
+    expect(t.canvases()).toHaveLength(0);
+    expect(t.createRenderer).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.any(String), error);
+    const text = () => t.container.querySelector('p')?.textContent;
+    t.setNow(STARTED_AT + 11_553);
+    t.frames.step();
+    expect(text()).toBe('2,00x');
+  });
+
+  it('LZ3: unmount com o carregador pendente: quando ele resolve, nada é criado', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const t = await setup({ loader: 'pending' });
+    expect(t.loadScene).toHaveBeenCalledTimes(1);
+    t.unmount();
+    await act(async () => {
+      t.load.resolve(t.module);
+      await settle();
+    });
+
+    expect(t.createRenderer).not.toHaveBeenCalled();
+    expect(t.build).not.toHaveBeenCalled();
+    expect(t.canvases()).toHaveLength(0);
+    expect(warn).not.toHaveBeenCalled();
+    expect(t.loop.live()).toBe(0);
+    expect(t.store.live()).toBe(0);
+  });
+
+  it('LZ3b: unmount com o carregador pendente e depois a rejeição: sem aviso e sem rejeição solta', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const t = await setup({ loader: 'pending' });
+    t.unmount();
+    await act(async () => {
+      t.load.reject(new Error('Failed to fetch dynamically imported module'));
+      await settle();
+    });
+
+    expect(t.createRenderer).not.toHaveBeenCalled();
+    expect(t.canvases()).toHaveLength(0);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

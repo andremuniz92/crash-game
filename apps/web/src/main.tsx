@@ -8,7 +8,6 @@ import { maybeStartFpsMeter } from './app/fps-flag.js';
 import { createFrameLoop } from './app/frame-loop.js';
 import { createMarks } from './app/marks.js';
 import type { SceneEnvironment } from './game/mount-scene.js';
-import { createPixiRenderer } from './game/pixi/create-renderer.js';
 import { GameProvider } from './app/game-context.js';
 import { createIdempotencyKey } from './app/idempotency-key.js';
 import { whenLive } from './app/when-live.js';
@@ -34,8 +33,9 @@ const store = createGameStore();
 const clock = createServerClock({ now });
 const frames = createFrameLoop({ clock });
 const marks = createMarks((name) => performance.mark(name));
+// O pixi.js fica num chunk à parte, pedido só quando o palco monta (D94).
 const scene: SceneEnvironment = {
-  createRenderer: createPixiRenderer,
+  loadScene: () => import('./game/pixi/scene-module.js'),
   matchMedia: (query) => window.matchMedia(query),
   devicePixelRatio: () => window.devicePixelRatio,
 };

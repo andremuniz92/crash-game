@@ -35,13 +35,13 @@ export function fakeActions(overrides: Partial<Actions> = {}): Actions {
 }
 
 /**
- * Cena que nunca monta: o renderer não resolve, sem movimento reduzido e DPR 1.
+ * Cena que nunca monta: o carregador não resolve, sem movimento reduzido e DPR 1.
  * Os testes que não são da cena não criam canvas nem precisam de matchMedia,
  * que o jsdom não tem.
  */
 export function idleScene(): SceneEnvironment {
   return {
-    createRenderer: () => new Promise(() => {}),
+    loadScene: () => new Promise(() => {}),
     matchMedia: () => ({
       matches: false,
       addEventListener: () => {},

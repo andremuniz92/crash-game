@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ActionResult } from './app/actions.js';
 import { createMarks } from './app/marks.js';
 import { App } from './App.js';
+import type { RoundDto } from '@crash/shared';
 import { signIn } from './store/game-state.js';
 import { createGameStore } from './store/game-store.js';
 import { fakeFrames, fakeResizeObserver } from './testing/fake-browser.js';
@@ -91,6 +92,46 @@ describe('App', () => {
     expect(countdown?.hidden).toBe(false);
     expect(countdown?.getAttribute('aria-hidden')).toBe('true');
     expect(document.querySelectorAll('[aria-live]')).toHaveLength(1);
+  });
+
+  it('LZ1: com o chunk da cena ainda carregando, o texto anima, o painel está na tela e o app já é jogável', () => {
+    const frames = fakeFrames();
+    fakeResizeObserver();
+    const mark = vi.fn();
+    const loadScene = vi.fn(() => new Promise<never>(() => {}));
+    const store = createGameStore();
+    const running: RoundDto = {
+      status: 'RUNNING',
+      id: '00000000-0000-4000-8000-0000000000a1',
+      seedHash: 'h'.repeat(64),
+      bettingEndsAt: 10_000,
+      startedAt: 10_000,
+    };
+    store.load({ round: running, bets: [], myBet: null, serverTime: 0 });
+    const { setServerNow } = renderWithGame(<App />, {
+      store,
+      serverNow: 10_000,
+      marks: createMarks(mark),
+      scene: {
+        loadScene,
+        matchMedia: () => ({
+          matches: false,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+        }),
+        devicePixelRatio: () => 1,
+      },
+    });
+
+    expect(loadScene).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText('Nickname')).not.toBeNull();
+    expect(mark.mock.calls).toEqual([['app:first-render']]);
+    expect(document.querySelectorAll('[data-stage] canvas')).toHaveLength(0);
+    const text = () =>
+      document.querySelector('[data-stage] p[aria-hidden="true"]')?.textContent;
+    setServerNow(10_000 + 11_553);
+    act(() => frames.step());
+    expect(text()).toBe('2,00x');
   });
 
   it('AP5: app:first-render é marcado uma vez, mesmo com o StrictMode', () => {

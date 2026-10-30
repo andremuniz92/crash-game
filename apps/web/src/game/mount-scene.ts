@@ -34,9 +34,16 @@ export interface MediaQueryLike {
   removeEventListener(type: 'change', listener: () => void): void;
 }
 
+/** O que o chunk da cena entrega: tudo o que depende do pixi.js (D94). */
+export interface SceneModule {
+  createRenderer: CreateRenderer;
+  buildScene: () => PixiScene;
+}
+
 /** O que vem do navegador; nos testes, fakes (D82). */
 export interface SceneEnvironment {
-  createRenderer: CreateRenderer;
+  /** Carrega o chunk da cena; no app, um import() (D94). */
+  loadScene(): Promise<SceneModule>;
   matchMedia(query: string): MediaQueryLike;
   devicePixelRatio(): number;
 }
@@ -45,7 +52,6 @@ export interface SceneDeps {
   store: Pick<GameStore, 'getState' | 'subscribe'>;
   frames: FrameLoop;
   environment: SceneEnvironment;
-  buildScene: () => PixiScene;
   marks: Marks;
   warn?: (message: string, error: unknown) => void;
 }
@@ -64,9 +70,10 @@ function rendererOptions(devicePixelRatio: number): RendererOptions {
 }
 
 /**
- * Monta a cena no `host` e devolve o dispose, síncrono (D91). O init do
- * renderer é assíncrono: se o dispose vier antes, o renderer é destruído
- * assim que resolver, e o canvas nunca entra no DOM. A rodada vem da
+ * Monta a cena no `host` e devolve o dispose, síncrono (D91). O chunk da
+ * cena e o init do renderer são assíncronos (D94): se o dispose vier antes do
+ * chunk, o renderer nem é criado; se vier antes do init, o renderer é
+ * destruído assim que resolver, e o canvas nunca entra no DOM. A rodada vem da
  * assinatura da store (D10), e cada frame do loop único (D89) escreve o
  * modelo puro, desenha e renderiza.
  */
@@ -76,7 +83,6 @@ export function mountScene(
     store,
     frames,
     environment,
-    buildScene,
     marks,
     warn = (message, error) => console.warn(message, error),
   }: SceneDeps,
@@ -96,13 +102,18 @@ export function mountScene(
   motion.addEventListener('change', onMotion);
 
   environment
-    .createRenderer(rendererOptions(environment.devicePixelRatio()))
-    .then((renderer) => {
-      if (disposed) {
-        renderer.destroy({ removeView: true });
-        return;
-      }
-      teardown = start(renderer);
+    .loadScene()
+    .then(({ createRenderer, buildScene }) => {
+      if (disposed) return;
+      return createRenderer(
+        rendererOptions(environment.devicePixelRatio()),
+      ).then((renderer) => {
+        if (disposed) {
+          renderer.destroy({ removeView: true });
+          return;
+        }
+        teardown = start(renderer, buildScene);
+      });
     })
     .catch((error: unknown) => {
       // Depois do dispose, é uma montagem descartada (StrictMode, ou desmonte
@@ -112,7 +123,10 @@ export function mountScene(
       }
     });
 
-  function start(renderer: SceneRenderer): () => void {
+  function start(
+    renderer: SceneRenderer,
+    buildScene: () => PixiScene,
+  ): () => void {
     const scene = buildScene();
     const model = createFrameModel();
     const { canvas } = renderer;
