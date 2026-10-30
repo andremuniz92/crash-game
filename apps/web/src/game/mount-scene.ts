@@ -132,6 +132,9 @@ export function mountScene(
     .loadScene()
     .then(({ createRenderer, buildScene }) => {
       if (disposed) return;
+      // A escala publicada antes do chunk (o palco mede depois de a cena
+      // montar) entra direto no init; só sem nenhuma medida fica a 1.
+      applied = wanted;
       return createRenderer(
         rendererOptions(applied, environment.devicePixelRatio()),
       ).then((renderer) => {

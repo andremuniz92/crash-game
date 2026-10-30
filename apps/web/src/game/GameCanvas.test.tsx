@@ -575,7 +575,23 @@ describe('GameCanvas com a resolução pela escala do palco (D93)', () => {
     expect(t.canvases()[0]).toBe(renderer.canvas);
   });
 
-  it('GC14: escalas publicadas antes do init viram um resize só, com a última', async () => {
+  it('GC14a: escala publicada antes do chunk da cena entra direto no init, sem resize depois', async () => {
+    // Como no navegador: o efeito do GameCanvas (filho) roda antes do efeito
+    // do GameStage, então a montagem vê escala 0, e a primeira medida do
+    // palco chega antes do chunk.
+    const t = await setup({ scale: 0, loader: 'pending' });
+    t.publish(0.25);
+    await act(async () => {
+      t.load.resolve(t.module);
+      await settle();
+    });
+
+    expect(t.createRenderer.mock.calls[0]?.[0].resolution).toBe(0.5);
+    const { renderer } = await t.resolveInit();
+    expect(renderer.resize).not.toHaveBeenCalled();
+  });
+
+  it('GC14b: escalas publicadas durante o init viram um resize só, com a última', async () => {
     const t = await setup();
     t.publish(0.25);
     t.publish(0.75);
@@ -598,6 +614,7 @@ describe('GameCanvas com a resolução pela escala do palco (D93)', () => {
     t.publish(0);
     expect(renderer.resize).not.toHaveBeenCalled();
     t.publish(0.25);
+    expect(renderer.resize).toHaveBeenCalledTimes(1);
     expect(renderer.resize.mock.calls).toEqual([[1280, 720, 0.5]]);
   });
 
