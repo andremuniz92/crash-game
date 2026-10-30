@@ -163,7 +163,7 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 
 ### Decisões pendentes
 
-Nenhuma no momento.
+- **Medida do "depois" da F9 (otimização 2, D93).** Como a média de fps já está no teto de 60 Hz no iPhone 11, a F9 (D93) não tem como subir a média; antes da lista de testes, decidir qual medida usar no "depois" (1% low, frames lentos ou custo de GPU) e se a fase continua valendo o esforço.
 
 ---
 
