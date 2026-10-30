@@ -50,7 +50,7 @@ O README e a qualidade do histórico de commits pesam tanto quanto o código.
 | Testes | Vitest em todo o monorepo (decorators resolvidos pelo Vite 8, sem SWC); integração com o Postgres do Docker Compose, num banco separado (`crash_game_test`), e com um service container no CI (D39) |
 | Infra local | Docker Compose (postgres + api) |
 | CI | GitHub Actions: lint, typecheck, testes |
-| Deploy | web no Netlify, api + Postgres no Railway ou Render |
+| Deploy | web no Netlify, api + Postgres no Railway (D102) |
 
 Use sempre a versão estável mais recente de cada pacote no momento do setup e registre as versões no README.
 
@@ -161,6 +161,15 @@ Use sempre a versão estável mais recente de cada pacote no momento do setup e 
 | D99 | **`pixi.js` (8.22) só no `apps/web`**, fora do catalog (D17). Na instalação, nenhuma dependência transitiva roda script de build sem registro na D46 | Só o front usa. O catalog é para versões compartilhadas entre pacotes |
 | D100 | **Contador de segundos restantes da janela de apostas, em texto DOM.** Mostra `ceil((bettingEndsAt − serverNow) / 1000)`; some fora de BETTING e com o prazo vencido (sem negativo nem "0"). Assina o frame loop (D89), sem rAF nem leitura de relógio próprios, e escreve no `textContent` só quando o segundo muda, sem re-render. É `aria-hidden`: a única região `aria-live` continua sendo o `RoundAnnouncer`. Sem barra proporcional no M5; a barra fica opcional para o M6, com a duração da janela no contrato do `round:betting` | O cliente não conhece o `BETTING_MS` (D64): uma barra proporcional exigiria fixar a duração no front, um acoplamento escondido, ou mudar o contrato. Os segundos restantes só dependem do prazo, que o cliente já tem. Hoje o jogador não vê quanto tempo falta para apostar |
 | D101 | **Medida da otimização 2.** O "depois" da F9 não é o fps, porque o iPhone 11 já faz 60 fps no "antes" (F7), e sim o backing do canvas, `canvas.width × canvas.height`, no modo responsivo do Firefox: 414×896 com DPR 2 e 412×915 com DPR 3, antes e depois. Mantém o teto da D93, `clamp(fitScale × min(DPR, 2), 0,25, 2)`, e o antialias decidido no init. "Antes" medido em `575d5f1`: 2560 × 1440 = 3.686.400 px (DPR 2) e 3840 × 2160 = 8.294.400 px (DPR 3) | Com a média no teto de 60 Hz, a F9 não pode subir o fps. O ganho dela é desenhar menos pixels (menos GPU, memória e bateria), e o backing mede isso de forma direta e reproduzível, sem aparelho |
+| D102 | **Alvo do deploy:** Postgres e api no Railway, num projeto só; a api com 1 réplica, App Sleeping desligado e reinício `ON_FAILURE`. Web estático no Netlify, com deploy previews e branch deploys desligados. Domínios fixados antes do primeiro deploy: `https://crash-pipa.netlify.app` (`WEB_ORIGIN`) e `https://crash-pipa-api.up.railway.app` (`VITE_API_URL`) | O game loop não pode dormir nem escalar (D13). A api não sobe sem `WEB_ORIGIN` (D69) e o build do web falha sem `VITE_API_URL` (D85): os dois nomes precisam existir antes. Um preview tem outra origem e seria recusado pelo CORS e pelo WS (D69, D70) |
+| D103 | **Imagem da api:** `apps/api/Dockerfile` multi-stage, com contexto na raiz e `node:<versão do .nvmrc>-alpine` em todos os estágios; pnpm pelo corepack (`packageManager`); build do `@crash/shared` e depois da api; `pnpm --filter @crash/api deploy --prod` para um `node_modules` só de produção; estágio final com o usuário `node`, `ENTRYPOINT ["/sbin/tini", "--"]` e `CMD ["node", "dist/main.js"]` em forma exec. Dependência nova: o **`tini`** (pacote do Alpine). Configuração do Railway como código em `apps/api/railway.json` (builder `DOCKERFILE`, `preDeployCommand`, `healthcheckPath`, `restartPolicyType`, `sleepApplication: false`, `watchPatterns`). `.dockerignore` na raiz. Um teste confere a versão do Node, o tini e a forma exec | Num container, o `node` seria o PID 1, que ignora sinais sem handler: depois do shutdown, o Nest reenvia o SIGTERM para o próprio processo, e o PID 1 sairia com 0 ou ficaria preso até o SIGKILL. Com o tini como PID 1, o SIGTERM chega ao `node` e a saída continua 143. Rodar via `pnpm` também atrapalharia os sinais. O Dockerfile serve depois à api no Docker Compose (M7) |
+| D104 | **Migrations no deploy** por um ponto de entrada próprio, `dist/migrate.js` (`src/migrate.ts`), que chama `runMigrations(clientUrl)`: `ormOptions` + `orm.migrator.up()`, fechando o ORM no fim. Roda no `preDeployCommand` do Railway; se falhar, o deploy é abortado e a versão anterior continua no ar. Revisa a D44 só na forma do script: a api continua sem migrar no boot | A CLI do MikroORM e o `tsx` são devDependencies e ficam fora da imagem de produção; a CLI ainda tentaria o `src/*.ts` antes do `dist`. O pre-deploy roda na mesma imagem, com acesso à rede privada do Railway |
+| D105 | **`GET /health`** faz `select 1` no banco: 200 `{ status: 'ok' }`; com falha, 503 `{ code: 'UNHEALTHY' }`, **sem `message`**, e o erro só no log. O controller monta a resposta, sem passar pelo filtro da D58 (que transforma todo 5xx em `INTERNAL_ERROR`); a lógica fica numa função pura testada sem Nest. Sem autenticação. É o `healthcheckPath` do Railway | O Railway só troca o tráfego para a versão nova depois do healthcheck; incluir o banco faz um `DATABASE_URL` errado reprovar o deploy. A mensagem do driver pode trazer host, usuário ou nome do banco, e a rota é pública |
+| D106 | **`netlify.toml` na raiz:** `command` builda o `@crash/shared` e depois o `@crash/web`; `publish = "apps/web/dist"`; `[build.environment]` com `NODE_VERSION` (igual ao `.nvmrc`), `PNPM_VERSION` (igual ao `packageManager`) e `VITE_API_URL`; cache `public, max-age=31536000, immutable` em `/assets/*`. Um teste confere versões, diretório publicado, ordem do build e a URL da API | A URL da API não é segredo: versionada, entra na revisão do diff e no teste da CSP (D107). Sem o teste, `.nvmrc`, `packageManager` e o toml divergiriam em silêncio |
+| D107 | **CSP e cabeçalhos no Netlify:** `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' <VITE_API_URL> <URL do WS>; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`, mais `X-Content-Type-Options: nosniff` e `Referrer-Policy: strict-origin-when-cross-origin`. O adaptador da cena importa `pixi.js/unsafe-eval`, dentro do chunk dinâmico (D94). O roteiro do deploy confere o console: violação de `worker-src` ou `blob:` se corrige acrescentando a diretiva que faltar, **nunca afrouxando o `script-src`**. Um teste impede `'unsafe-eval'` e `'unsafe-inline'` no `script-src` | É a mitigação prometida para o token no `localStorage` (D77). O Pixi 8 gera código com `new Function`; sem `'unsafe-eval'`, o init lança erro e o fallback da D92 esconderia a pipa em silêncio. O módulo `unsafe-eval` troca essa geração por funções prontas e fica fora do JS inicial |
+| D108 | **Exposição pública sem proteção nova no código:** guest sem limite e token sem expiração seguem documentados (seção 14). Proteções operacionais: limite de gasto (hard limit) no Railway, Postgres sem TCP proxy público (só rede privada), deploy previews desligados (D102) e a CSP (D107) | Os créditos são fictícios; o pior caso é encher o banco, e o limite de gasto contém o custo. Um limite por IP fica para quando houver abuso |
+| D109 | **Sobreposição no deploy aceita e documentada.** O Railway sobe a versão nova, espera o healthcheck e só então manda SIGTERM à antiga: por alguns segundos, dois game loops rodam. O banco mantém as invariantes: um `open` duplicado esbarra no `rounds_single_current_unique`; `start` e `crash` duplicados esperam o `FOR UPDATE`, veem o status novo e lançam `InvalidRoundTransitionError`, que vai para o log com nova tentativa em 1 s (D61). Os clientes da instância antiga perdem eventos da nova e se recuperam pela ressincronização (D76) | Eleição de líder ou lock distribuído continuam fora do escopo (D13, seção 14). O efeito é um erro no log e uma ressincronização, nunca saldo errado |
+| D110 | **GIF do README** em `docs/media/crash-game.gif`, fora do Prettier: 10 s, ~800 px de largura, 12–15 fps, **até 5 MB**. Gravado no host (Kooha ou o gravador do GNOME no Wayland; `ffmpeg -f x11grab` no X11), convertido com `ffmpeg` (`palettegen`/`paletteuse`) e otimizado com `gifsicle -O3 --lossy=80`; nenhuma dessas ferramentas entra no repositório. Acima de 5 MB, a alternativa é um MP4 anexado pelo GitHub | O GIF toca no README do GitHub sem player; o teto de tamanho mantém a página leve e o histórico do git enxuto |
 
 ### Decisões pendentes
 
@@ -552,12 +561,21 @@ Estimativa total: ~47–51 h (MVP sem M6: ~38–42 h).
 - [ ] Candidata a refatoração: a validação de origem pura está duplicada em `apps/web/src/config.ts` (`VITE_API_URL`, D73) e em `apps/api/src/shared/infrastructure/config/app-config.ts` (`WEB_ORIGIN`, D69); mover a função para o `@crash/shared`, com os testes das duas pontas continuando verdes
 - [ ] Opcional: barra proporcional da janela de apostas, com a duração no contrato do `round:betting` (muda a D63; D100)
 
-### M7 — Entrega (4 h)
-- [ ] README: GIF de 10 s, arquitetura, decisões (link para esta seção 4), fluxos críticos, como rodar, limitações
+### M7a — Deploy enxuto (antes do M6 e do resto do M7)
+- [x] F0: decisões do deploy registradas (D102–D110)
+- [ ] F1: `GET /health` com `select 1`, 503 `{ code: 'UNHEALTHY' }` sem a mensagem do erro (D105)
+- [ ] F2: `dist/migrate.js` para o pre-deploy, com teste de idempotência e de reaplicação, restaurando o schema no `finally` (D104)
+- [ ] F3: Dockerfile com tini, `.dockerignore` e `railway.json`, com teste de consistência; imagem conferida no host (build, run e `docker stop` saindo com 143) (D103)
+- [ ] F4: `pixi.js/unsafe-eval` no chunk da cena (D107)
+- [ ] F5: `netlify.toml` com build, versões, `VITE_API_URL`, CSP e cabeçalhos, com teste de consistência (D106, D107)
+- [ ] F6: deploy no Railway e no Netlify (passo a passo do André), roteiro manual (CSP no console, inclusive `worker-src`/`blob:`; pipa; `wss`; verificação da D86; deploy com o jogo aberto) e seção de deploy no README, com as limitações novas (D108, D109)
+- [ ] F7: GIF de 10 s no topo do README (D110) e Lighthouse no deploy (3 execuções, mediana, ao lado da medição local)
+
+### M7 — Entrega (depois do M6)
+- [ ] README: arquitetura, decisões (link para esta seção 4), fluxos críticos, como rodar, limitações (o GIF vem do M7a)
 - [ ] Diagramas: contexto e fluxo de uma rodada
-- [ ] Repetir as medições da seção 11.3 no deploy (as do M5 são na rede local)
-- [ ] Api no Docker Compose (Dockerfile da api), como prevê a seção 3
-- [ ] Deploy do web e da api (a api exige `WEB_ORIGIN` com a origem do web, D69; o build do web exige `VITE_API_URL`, D73)
+- [ ] Medições restantes da seção 11.3 no deploy (fps no celular e Network; o Lighthouse vem do M7a)
+- [ ] Api no Docker Compose, reusando o Dockerfile do M7a, como prevê a seção 3
 
 ### Definição de pronto (para toda etapa)
 - [ ] Testes, lint e typecheck passando no CI
@@ -583,6 +601,8 @@ Estimativa total: ~47–51 h (MVP sem M6: ~38–42 h).
 - **Verificação indisponível pelo IP da rede local em HTTP** (D98): sem contexto seguro, não há `crypto.subtle`; apostar e sacar funcionam (D96). Documentado no README.
 - **Resolução recalculada só quando a escala do palco é publicada** (D93): uma mudança de DPR sem mudança de tamanho CSS (janela arrastada para um monitor com outro DPR) espera o próximo resize. Documentado no README.
 - **Antialias decidido no init** (D93): desligado com DPR ≥ 2, em que o backing fica 1:1 com os pixels físicos. Documentado no README.
+- **Dois game loops por alguns segundos em cada deploy** (D109): a versão nova sobe antes de a antiga parar. O banco mantém as invariantes; o efeito é erro no log e ressincronização dos clientes da instância antiga. Documentado no README.
+- **Sem deploy previews do Netlify** (D102): a origem de um preview seria recusada pelo CORS e pelo WS.
 - Escala horizontal do game loop (exigiria eleição de líder ou lock distribuído)
 - Chat entre jogadores
 - Dinheiro real de qualquer tipo
