@@ -440,4 +440,24 @@ describe('GameCanvas (D89, D91, D92)', () => {
     expect(t.createRenderer).toHaveBeenCalledTimes(1);
     expect(t.build).toHaveBeenCalledTimes(1);
   });
+
+  it('GC10: scene:first-frame é marcado uma vez, logo depois do primeiro render', async () => {
+    const t = setup({ strict: true });
+    await t.resolveInit(0);
+    const { renderer } = await t.resolveInit(1);
+    const once = vi.mocked(t.marks.once);
+    const firstFrame = () =>
+      once.mock.calls.filter(([name]) => name === 'scene:first-frame');
+    expect(firstFrame()).toHaveLength(1);
+    const markIndex = once.mock.calls.findIndex(
+      ([name]) => name === 'scene:first-frame',
+    );
+    expect(once.mock.invocationCallOrder[markIndex]).toBeGreaterThan(
+      renderer.render.mock.invocationCallOrder[0] ?? Infinity,
+    );
+
+    for (let i = 0; i < 10; i++) t.frames.step();
+
+    expect(firstFrame()).toHaveLength(1);
+  });
 });

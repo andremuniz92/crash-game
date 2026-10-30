@@ -1,5 +1,6 @@
 import styles from './App.module.css';
-import { useGameState } from './app/game-context.js';
+import { useEffect } from 'react';
+import { useGame, useGameState } from './app/game-context.js';
 import { GameCanvas } from './game/GameCanvas.js';
 import { GameStage } from './game/GameStage.js';
 import { MultiplierText } from './game/MultiplierText.js';
@@ -15,6 +16,12 @@ import { WalletPanel } from './ui/WalletPanel.js';
 /** Palco à esquerda e painel à direita; em coluna abaixo de 768 px (D81). */
 export function App() {
   const signedIn = useGameState((state) => state.player !== null);
+  const { marks } = useGame();
+
+  // Texto e painel na tela: o jogo já é jogável (D94).
+  useEffect(() => {
+    marks.once('app:first-render');
+  }, [marks]);
 
   return (
     <div className={styles.app}>

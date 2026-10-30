@@ -2,6 +2,7 @@ import type { Container } from 'pixi.js';
 import type { FrameLoop } from '../app/frame-loop.js';
 import type { GameStore } from '../store/game-store.js';
 import { STAGE_HEIGHT, STAGE_WIDTH } from './fit-scale.js';
+import type { Marks } from '../app/marks.js';
 import type { PixiScene } from './pixi/pixi-scene.js';
 import { createFrameModel, writeFrame } from './scene/frame-model.js';
 
@@ -45,6 +46,7 @@ export interface SceneDeps {
   frames: FrameLoop;
   environment: SceneEnvironment;
   buildScene: () => PixiScene;
+  marks: Marks;
   warn?: (message: string, error: unknown) => void;
 }
 
@@ -75,6 +77,7 @@ export function mountScene(
     frames,
     environment,
     buildScene,
+    marks,
     warn = (message, error) => console.warn(message, error),
   }: SceneDeps,
 ): () => void {
@@ -132,11 +135,16 @@ export function mountScene(
     host.appendChild(canvas);
 
     // A assinatura chama na hora (FL6): o primeiro quadro sai já no init.
+    let rendered = false;
     const unsubscribeFrames = frames.subscribe((serverNow) => {
       if (lost) return;
       writeFrame(model, round, serverNow, { reducedMotion });
       scene.draw(model);
       renderer.render(scene.stage);
+      if (!rendered) {
+        rendered = true;
+        marks.once('scene:first-frame');
+      }
     });
 
     return () => {

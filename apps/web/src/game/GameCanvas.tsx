@@ -18,14 +18,20 @@ export function GameCanvas({
   /** Nos testes, a árvore real envolvida por um espião. */
   buildScene?: () => PixiScene;
 }) {
-  const { store, frames, scene } = useGame();
+  const { store, frames, scene, marks } = useGame();
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const node = host.current;
     if (!node) return;
-    return mountScene(node, { store, frames, environment: scene, buildScene });
-  }, [store, frames, scene, buildScene]);
+    return mountScene(node, {
+      store,
+      frames,
+      environment: scene,
+      buildScene,
+      marks,
+    });
+  }, [store, frames, scene, buildScene, marks]);
 
   return <div ref={host} className={styles.host} data-scene-host />;
 }

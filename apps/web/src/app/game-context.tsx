@@ -5,6 +5,7 @@ import type { GameState } from '../store/game-state.js';
 import type { GameStore } from '../store/game-store.js';
 import type { Actions } from './actions.js';
 import type { FrameLoop } from './frame-loop.js';
+import type { Marks } from './marks.js';
 import type { SceneEnvironment } from '../game/mount-scene.js';
 
 /**
@@ -19,6 +20,8 @@ export interface GameDeps {
   frames: FrameLoop;
   /** Renderer, preferências de movimento e densidade de pixels da cena. */
   scene: SceneEnvironment;
+  /** Marcas de desempenho, uma vez cada (D94, D97). */
+  marks: Marks;
 }
 
 const GameContext = createContext<GameDeps | null>(null);

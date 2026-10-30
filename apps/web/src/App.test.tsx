@@ -3,6 +3,7 @@ import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ActionResult } from './app/actions.js';
+import { createMarks } from './app/marks.js';
 import { App } from './App.js';
 import { signIn } from './store/game-state.js';
 import { createGameStore } from './store/game-store.js';
@@ -90,5 +91,11 @@ describe('App', () => {
     expect(countdown?.hidden).toBe(false);
     expect(countdown?.getAttribute('aria-hidden')).toBe('true');
     expect(document.querySelectorAll('[aria-live]')).toHaveLength(1);
+  });
+
+  it('AP5: app:first-render é marcado uma vez, mesmo com o StrictMode', () => {
+    const mark = vi.fn();
+    renderApp({ strict: true, marks: createMarks(mark) });
+    expect(mark.mock.calls).toEqual([['app:first-render']]);
   });
 });

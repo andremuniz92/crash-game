@@ -4,7 +4,9 @@ import { App } from './App.js';
 import './ui/tokens.css';
 import './ui/base.css';
 import { createActions } from './app/actions.js';
+import { maybeStartFpsMeter } from './app/fps-flag.js';
 import { createFrameLoop } from './app/frame-loop.js';
+import { createMarks } from './app/marks.js';
 import type { SceneEnvironment } from './game/mount-scene.js';
 import { createPixiRenderer } from './game/pixi/create-renderer.js';
 import { GameProvider } from './app/game-context.js';
@@ -31,6 +33,7 @@ const now = () => performance.now();
 const store = createGameStore();
 const clock = createServerClock({ now });
 const frames = createFrameLoop({ clock });
+const marks = createMarks((name) => performance.mark(name));
 const scene: SceneEnvironment = {
   createRenderer: createPixiRenderer,
   matchMedia: (query) => window.matchMedia(query),
@@ -107,6 +110,15 @@ if (import.meta.env.DEV) {
   });
 }
 
+// Medidor de fps só com ?fps, num chunk à parte (D97).
+maybeStartFpsMeter(location.search, () =>
+  import('./app/fps-meter.js')
+    .then(({ startFpsMeter }) => startFpsMeter({ frames, store, document }))
+    .catch((error: unknown) =>
+      console.warn('medidor de fps indisponível', error),
+    ),
+);
+
 void actions.restoreSession();
 whenLive(store, () => void actions.loadHistory());
 connection.start();
@@ -118,7 +130,7 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <GameProvider value={{ store, actions, clock, frames, scene }}>
+    <GameProvider value={{ store, actions, clock, frames, scene, marks }}>
       <App />
     </GameProvider>
   </StrictMode>,

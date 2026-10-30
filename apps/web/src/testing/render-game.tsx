@@ -69,6 +69,7 @@ export function renderWithGame(
     clock,
     frames: deps.frames ?? createFrameLoop({ clock }),
     scene: deps.scene ?? idleScene(),
+    marks: deps.marks ?? { once: vi.fn() },
   };
   const tree = <GameProvider value={value}>{ui}</GameProvider>;
   const result = render(deps.strict ? <StrictMode>{tree}</StrictMode> : tree);

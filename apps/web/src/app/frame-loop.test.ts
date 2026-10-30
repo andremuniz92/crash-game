@@ -193,4 +193,68 @@ describe('createFrameLoop (D89)', () => {
     frames.step();
     expect(b).toHaveBeenCalledTimes(1);
   });
+
+  it('FL10: o canal de tempo recebe o timestamp do rAF, e o subscribe continua só com o serverNow', () => {
+    const pending = new Map<number, FrameRequestCallback>();
+    let nextId = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      pending.set(++nextId, callback);
+      return nextId;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+      pending.delete(id);
+    });
+    const step = (frameTime: number) => {
+      const due = [...pending.values()];
+      pending.clear();
+      for (const callback of due) callback(frameTime);
+    };
+    const loop = createFrameLoop({ clock: { serverNow: () => 11_553 } });
+    const timing = vi.fn();
+    const listener = vi.fn();
+    loop.subscribeTiming(timing);
+    loop.subscribe(listener);
+    expect(timing).not.toHaveBeenCalled();
+    listener.mockClear();
+
+    step(1_000);
+    step(1_016.5);
+
+    expect(timing.mock.calls).toEqual([[1_000], [1_016.5]]);
+    expect(listener.mock.calls).toEqual([[11_553], [11_553]]);
+  });
+
+  it('FL11: só um assinante de tempo mantém o loop; cancelar duas vezes o para uma vez', () => {
+    const frames = fakeFrames();
+    const loop = createFrameLoop({ clock: countingClock() });
+    const off = loop.subscribeTiming(vi.fn());
+    expect(frames.active()).toBe(1);
+
+    off();
+    off();
+
+    expect(frames.active()).toBe(0);
+  });
+
+  it('FL12: um assinante de tempo que lança não para os outros nem o próximo frame', () => {
+    const frames = fakeFrames();
+    const onError = vi.fn();
+    const loop = createFrameLoop({ clock: countingClock(), onError });
+    const boom = new Error('falha no medidor');
+    loop.subscribeTiming(() => {
+      throw boom;
+    });
+    const otherTiming = vi.fn();
+    loop.subscribeTiming(otherTiming);
+    const listener = vi.fn();
+    loop.subscribe(listener);
+    listener.mockClear();
+
+    frames.step();
+
+    expect(onError).toHaveBeenCalledWith(boom);
+    expect(otherTiming).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(frames.active()).toBe(1);
+  });
 });
