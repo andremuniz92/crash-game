@@ -212,6 +212,137 @@ medições da seção 11.3, que ficam para o M7.
 | CSS          | 7,35 kB   | 2,05 kB  |
 | `index.html` | 0,51 kB   | 0,31 kB  |
 
+### Desempenho (seção 11.3)
+
+Medido na rede local (D97, D98); o M7 repete as medições no deploy. "Antes" é a versão simples,
+com o Pixi no chunk principal e `resolution = devicePixelRatio`; "Opt 1" e "Opt 2" são as
+otimizações da D94 e da D93, cada uma medida sobre a anterior.
+
+**Ambiente.** Host: Debian, Chromium 156.0.0.0, Lighthouse 13.5.0. Celular: iPhone 11, iOS
+18.0.1, Safari 18.0.1, 60 Hz, DPR 2, retrato, bateria 95 → 92 %, fora da tomada, Modo de Pouca
+Energia desligado, Wi-Fi 2,4 GHz. API e preview no AI Jail, build de
+produção (`VITE_API_URL=http://localhost:3000` no host; o IP da rede local no celular, D98). Na
+medição de fps, a API roda com `BETTING_MS=3000` e `PAUSE_MS=1000` em todas as versões, para
+encurtar a espera pela rodada longa; isso não muda nada durante a `RUNNING`.
+
+**Bundle** (`vite build`, gzip). "JS inicial" é o que a primeira carga baixa: o `index` e os
+chunks do Pixi que ele pré-carrega por `modulepreload`. "Sob demanda" é o que só chega depois:
+`browserAll` e `init` no init do renderer, e o medidor só com `?fps`.
+
+| Versão      | Commit  | JS inicial | Chunks sob demanda                | CSS     | Total inicial |
+| ----------- | ------- | ---------- | --------------------------------- | ------- | ------------- |
+| Fim do M4   | 50f9534 | 79,04 kB   | —                                 | 2,05 kB | 81,40 kB      |
+| Antes (M5)  | 43eecc9 | 214,97 kB  | renderer: 16,04 kB · fps: 1,16 kB | 2,14 kB | 217,54 kB     |
+| Opt 1 (D94) |         |            |                                   |         |               |
+| Opt 2 (D93) |         |            |                                   |         |               |
+
+"Total inicial" soma JS inicial, CSS e `index.html`. No "Antes", o `index` sozinho tem 500,67 kB
+(153,17 kB gzip), e o Vite avisa que passou de 500 kB.
+
+<details>
+<summary>Saída do <code>vite build</code></summary>
+
+```text
+Antes (43eecc9), vite v8.3.5, 800 módulos, built in 499ms:
+dist/index.html                                  0.94 kB │ gzip:   0.43 kB
+dist/assets/index-D15-m6Lf.css                   7.68 kB │ gzip:   2.14 kB
+dist/assets/webworkerAll-Dunr03Na.js             0.05 kB │ gzip:   0.06 kB
+dist/assets/getTextureBatchBindGroup-DYri6n2H.js 0.34 kB │ gzip:   0.26 kB
+dist/assets/fps-meter-BvvbcZER.js                2.12 kB │ gzip:   1.16 kB
+dist/assets/canvasUtils-D3aduNlw.js              6.01 kB │ gzip:   2.04 kB
+dist/assets/getTexelRangeRects-lWBUM-md.js      11.31 kB │ gzip:   2.97 kB
+dist/assets/init-GosjUjeC.js                    15.18 kB │ gzip:   4.76 kB
+dist/assets/browserAll-CspphzQI.js              43.48 kB │ gzip:  11.28 kB
+dist/assets/RenderTargetSystem-BA9QXhSt.js      77.97 kB │ gzip:  22.08 kB
+dist/assets/CanvasPool-B6fibMua.js             112.99 kB │ gzip:  34.45 kB
+dist/assets/index-De6SpbJm.js                  500.67 kB │ gzip: 153.17 kB
+(aviso do Vite: chunks maiores que 500 kB depois da minificação)
+```
+
+</details>
+
+**Carregamento** (mediana de 5, todas as execuções sem cache e sem sessão). Lighthouse no modo
+Navigation, Mobile (Moto G Power emulado), só Performance, com throttling aplicado pelo DevTools
+(Slow 4G + CPU 4×) e "Clear storage". Network "Fast 4G" com "Disable cache", "Clear site data"
+antes de cada carga e sem throttling de CPU. **Durante o Lighthouse, a aba Network precisa estar em
+"No throttling":** o throttling dela se soma ao do Lighthouse, e uma primeira série com "Fast 4G"
+esquecido ativo saiu com FCP de 0,8 s e foi descartada.
+
+| Versão | Score | FCP   | LCP   | TBT    | `app:first-render` | `scene:first-frame` | Fast 4G: `app:first-render` | Fast 4G: `scene:first-frame` | Transferido |
+| ------ | ----- | ----- | ----- | ------ | ------------------ | ------------------- | --------------------------- | ---------------------------- | ----------- |
+| Antes  | 89    | 2,6 s | 2,6 s | 160 ms | 2615 ms            | 3470 ms             | 665 ms                      | 962 ms                       | 239 kB      |
+| Opt 1  |       |       |       |        |                    |                     |                             |                              |             |
+| Opt 2  |       |       |       |        |                    |                     |                             |                              |             |
+
+**Leitura do "Antes".** Com Slow 4G e CPU 4×, o jogo só fica jogável (`app:first-render`) em
+~2,6 s, acima da meta de 2 s da seção 11.3, e a cena aparece ~0,9 s depois. Com Fast 4G e sem
+limitar a CPU, a meta é atingida (~0,67 s). O aviso de chunk acima de 500 kB e os 86 KiB de JS não
+usado apontados pelo Lighthouse ("Reduce unused JavaScript", em todas as execuções) são o alvo da
+otimização 1 (D94).
+
+<details>
+<summary>Execuções do carregamento</summary>
+
+Lighthouse, Antes. Em todas as execuções, "Reduce unused JavaScript" estimou 86 KiB de economia;
+na execução 1, "Render-blocking requests" estimou ~150 ms.
+
+| Execução | Score | FCP   | LCP   | TBT    | CLS   | SI    | `app:first-render` | `scene:first-frame` | JS exec | Main thread | Long tasks |
+| -------- | ----- | ----- | ----- | ------ | ----- | ----- | ------------------ | ------------------- | ------- | ----------- | ---------- |
+| 1        | 89    | 2,6 s | 2,6 s | 130 ms | 0,094 | 2,9 s | 2615,24 ms         | 3463,63 ms          | 2,0 s   | 4,0 s       | 4          |
+| 2        | 83    | 2,6 s | 2,6 s | 340 ms | 0,094 | 2,8 s | 2683,66 ms         | 3669,70 ms          | 2,2 s   | 4,2 s       | 4          |
+| 3        | 89    | 2,6 s | 2,6 s | 160 ms | 0,094 | 2,8 s | 2583,63 ms         | 3470,16 ms          | 2,3 s   | 4,7 s       | 3          |
+| 4        | 88    | 2,6 s | 2,6 s | 180 ms | 0,094 | 2,9 s | 2627,05 ms         | 3537,50 ms          | 2,3 s   | 4,5 s       | 3          |
+| 5        | 89    | 2,6 s | 2,6 s | 150 ms | 0,094 | 2,8 s | 2582,57 ms         | 3466,71 ms          | 1,8 s   | 4,0 s       | 2          |
+| Mediana  | 89    | 2,6 s | 2,6 s | 160 ms | 0,094 | 2,8 s | 2615 ms            | 3470 ms             |         |             |            |
+
+Network "Fast 4G", Antes, em ms (exceto Finish e Transferido). Cada carga transfere 239 kB, de
+779 kB de recursos, em 14 requisições. O `index` e 5 chunks do Pixi (`CanvasPool`, `canvasUtils`,
+`RenderTargetSystem`, `getTextureBatchBindGroup`, `getTexelRangeRects`) vêm na carga inicial, pelo
+`modulepreload`; `browserAll` e `init` chegam depois, no init do renderer.
+
+| Execução | first-paint | FCP | `app:first-render` | `scene:first-frame` | DOMContentLoaded | Load | Finish | Transferido |
+| -------- | ----------- | --- | ------------------ | ------------------- | ---------------- | ---- | ------ | ----------- |
+| 1        | 700         | 716 | 691                | 965                 | 665              | 665  | 1,18 s | 239 kB      |
+| 2        | 664         | 680 | 665                | 962                 | 632              | 632  | 1,14 s | 239 kB      |
+| 3        | 648         | 664 | 643                | 915                 | 616              | 616  | 1,13 s | 239 kB      |
+| 4        | 660         | 676 | 669                | 967                 | 636              | 636  | 1,15 s | 239 kB      |
+| 5        | 668         | 668 | 663                | 942                 | 623              | 623  | 1,14 s | 239 kB      |
+| Mediana  | 664         | 676 | 665                | 962                 | 632              | 632  | 1,14 s | 239 kB      |
+
+</details>
+
+**fps no celular** (iPhone 11, `?fps`; média e lentos da rodada inteira, 1% low dos últimos 10 s;
+lidos na linha da rodada do painel, por print de tela, sem gravação)
+
+| Versão | Rodada | Duração | Média | 1% low | Lentos (> 50 ms) |
+| ------ | ------ | ------- | ----- | ------ | ---------------- |
+| Antes  | curta  | 17,7 s  | 60,0  | 55     | 0                |
+| Antes  | longa  | 71,2 s  | 59,9  | 53     | 0                |
+| Opt 1  | curta  |         |       |        |                  |
+| Opt 1  | longa  |         |       |        |                  |
+| Opt 2  | curta  |         |       |        |                  |
+| Opt 2  | longa  |         |       |        |                  |
+
+**Leitura do "Antes".** O iPhone 11 já cumpre a meta de 60 fps da seção 11.3, inclusive na rodada
+longa, com o rastro esticado. O 1% low de 33 na rodada de 2,9 s (abaixo) vem da janela de 10 s, que
+pega a transição entre rodadas; com 0 frames lentos, é uma queda pontual.
+
+<details>
+<summary>Rodadas medidas</summary>
+
+Antes (43eecc9):
+
+| Rodada        | Crash  | Duração | Média | Lentos (> 50 ms) | 1% low (últimos 10 s) |
+| ------------- | ------ | ------- | ----- | ---------------- | --------------------- |
+| curta         | 1,19x  | 2,9 s   | 60,0  | 0                | 33                    |
+| curta         | 2,88x  | 17,7 s  | 60,0  | 0                | 55                    |
+| intermediária | 8,42x  | 35,6 s  | 59,9  | 1                | 57                    |
+| intermediária | 9,21x  | 37,1 s  | 59,8  | 1                | 48                    |
+| intermediária | 9,92x  | 38,3 s  | 60,0  | 0                | 51                    |
+| longa         | 71,60x | 71,2 s  | 59,9  | 0                | 53                    |
+
+</details>
+
 ### Scripts da raiz
 
 | Script              | O que faz                                                 |

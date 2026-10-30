@@ -23,6 +23,7 @@ O README e a qualidade do histórico de commits pesam tanto quanto o código.
 - **Decisões de arquitetura são do André.** O agente executa, propõe e questiona, mas não decide sozinho. Qualquer mudança de arquitetura, contrato ou modelo de dados é proposta antes e registrada na seção 4.
 - **O agente não faz commit nem push.** Ele prepara as mudanças; o André revisa o diff e commita no host.
 - **TDD sempre no domínio:** teste que falha → código mínimo → refatoração.
+- **Parar no vermelho:** depois de escrever os testes e rodá-los, parar e mostrar no relatório o motivo de cada falha, antes de escrever a implementação. Um teste que falha pelo motivo errado (import quebrado, erro de digitação no próprio teste) parece um vermelho válido.
 - **Prova por mutação:** antes de rodar os testes de uma mutação, confirmar que o arquivo mutado difere do original (`cmp` acusando diferença) e mostrar isso no relatório; depois, restaurar e conferir com `cmp` que voltou a ser idêntico. Uma mutação que não foi aplicada (trecho que não casou, por exemplo, por causa da formatação) parece uma rodada normal, com tudo verde.
 - **Commits pequenos**, um assunto por commit, com mensagem no padrão Conventional Commits (`feat:`, `fix:`, `test:`, `refactor:`, `docs:`, `chore:`).
 - **Nada de dependência nova sem justificar.** Antes de instalar um pacote, diga para que serve e qual a alternativa.
@@ -535,7 +536,7 @@ Estimativa total: ~47–51 h (MVP sem M6: ~38–42 h).
 - [x] `<GameCanvas />` com ciclo de vida correto, falhas de contexto e texto do multiplicador em DOM sobre o canvas (D90, D91, D92)
 - [x] Contador de segundos restantes da janela de apostas (D100)
 - [x] Medidor de fps (`?fps`) e marcas de carregamento (D97)
-- [ ] Medição "antes" (bundle, Lighthouse, fps no celular)
+- [x] Medição "antes" (bundle, Lighthouse, fps no celular)
 - [ ] Otimização 1: cena por import dinâmico (D94). Candidatas a medir junto, vindas do spike da F4: (a) `skipExtensionImports: true` com `import 'pixi.js/graphics'`, sem o `browserAll` (~15 kB gzip a menos; validar no navegador); (b) importar `WebGLRenderer` e `CanvasRenderer` direto, no lugar do `autoDetectRenderer`, porque o build puxa os três renderers estáticos, inclusive o WebGPU
 - [ ] Otimização 2: escala responsiva com resolução pela escala do palco (D93)
 - [ ] Medição "depois" e README (linha de base do bundle, números de desempenho, limitações)
