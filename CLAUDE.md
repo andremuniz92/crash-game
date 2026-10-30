@@ -564,7 +564,7 @@ Estimativa total: ~47–51 h (MVP sem M6: ~38–42 h).
 ### M7a — Deploy enxuto (antes do M6 e do resto do M7)
 - [x] F0: decisões do deploy registradas (D102–D110)
 - [x] F1: `GET /health` com `select 1`, 503 `{ code: 'UNHEALTHY' }` sem a mensagem do erro (D105)
-- [ ] F2: `dist/migrate.js` para o pre-deploy, com teste de idempotência e de reaplicação, restaurando o schema no `finally` (D104)
+- [x] F2: `dist/migrate.js` para o pre-deploy, com teste de idempotência e de reaplicação, restaurando o schema no `finally` (D104)
 - [ ] F3: Dockerfile com tini, `.dockerignore` e `railway.json`, com teste de consistência; imagem conferida no host (build, run e `docker stop` saindo com 143) (D103)
 - [ ] F4: `pixi.js/unsafe-eval` no chunk da cena (D107)
 - [ ] F5: `netlify.toml` com build, versões, `VITE_API_URL`, CSP e cabeçalhos, com teste de consistência (D106, D107)
