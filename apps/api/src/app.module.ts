@@ -8,6 +8,7 @@ import { CoreModule } from './shared/infrastructure/core.module.js';
 import { AppConfigModule } from './shared/infrastructure/config/app-config.module.js';
 import { DatabaseModule } from './shared/infrastructure/database/database.module.js';
 import { AppExceptionFilter } from './shared/infrastructure/http/app-exception.filter.js';
+import { HealthModule } from './shared/infrastructure/http/health.module.js';
 import { WalletModule } from './wallet/infrastructure/wallet.module.js';
 
 @Module({
@@ -15,6 +16,7 @@ import { WalletModule } from './wallet/infrastructure/wallet.module.js';
     AppConfigModule,
     CoreModule,
     DatabaseModule,
+    HealthModule,
     PlayersModule,
     RoundsModule,
     BetsModule,
