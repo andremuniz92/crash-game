@@ -4,12 +4,15 @@ import type { GameStore } from '../store/game-store.js';
 import { STAGE_HEIGHT, STAGE_WIDTH } from './fit-scale.js';
 import type { Marks } from '../app/marks.js';
 import type { PixiScene } from './pixi/pixi-scene.js';
+import { antialiasFor, renderResolution } from './scene/render-resolution.js';
+import type { StageScale } from './stage-scale.js';
 import { createFrameModel, writeFrame } from './scene/frame-model.js';
 
 /** O que o ciclo de vida usa do renderer do Pixi (D89: sem Application). */
 export interface SceneRenderer {
   readonly canvas: HTMLCanvasElement;
   render(stage: Container): void;
+  resize(width: number, height: number, resolution: number): void;
   destroy(options?: { removeView?: boolean }): void;
 }
 
@@ -52,20 +55,28 @@ export interface SceneDeps {
   store: Pick<GameStore, 'getState' | 'subscribe'>;
   frames: FrameLoop;
   environment: SceneEnvironment;
+  stageScale: StageScale;
   marks: Marks;
   warn?: (message: string, error: unknown) => void;
 }
 
-/** As opções da versão simples (o "antes" das medições, D97). */
-function rendererOptions(devicePixelRatio: number): RendererOptions {
+/**
+ * Opções do init (D93): a resolução vem da escala do palco (1 enquanto o
+ * palco não foi medido), o canvas fica em 1280×720 CSS e o antialias é
+ * decidido aqui, uma vez.
+ */
+function rendererOptions(
+  resolution: number,
+  devicePixelRatio: number,
+): RendererOptions {
   return {
     preference: ['webgl', 'canvas'],
     width: STAGE_WIDTH,
     height: STAGE_HEIGHT,
     backgroundAlpha: 0,
-    resolution: devicePixelRatio,
-    autoDensity: true,
-    antialias: true,
+    resolution,
+    autoDensity: false,
+    antialias: antialiasFor(devicePixelRatio),
   };
 }
 
@@ -73,7 +84,9 @@ function rendererOptions(devicePixelRatio: number): RendererOptions {
  * Monta a cena no `host` e devolve o dispose, síncrono (D91). O chunk da
  * cena e o init do renderer são assíncronos (D94): se o dispose vier antes do
  * chunk, o renderer nem é criado; se vier antes do init, o renderer é
- * destruído assim que resolver, e o canvas nunca entra no DOM. A rodada vem da
+ * destruído assim que resolver, e o canvas nunca entra no DOM. A resolução
+ * acompanha a escala do palco (D93): uma escala publicada antes do init fica
+ * guardada e é aplicada quando o renderer existir. A rodada vem da
  * assinatura da store (D10), e cada frame do loop único (D89) escreve o
  * modelo puro, desenha e renderiza.
  */
@@ -83,6 +96,7 @@ export function mountScene(
     store,
     frames,
     environment,
+    stageScale,
     marks,
     warn = (message, error) => console.warn(message, error),
   }: SceneDeps,
@@ -101,17 +115,36 @@ export function mountScene(
   };
   motion.addEventListener('change', onMotion);
 
+  // A resolução que o renderer tem (ou terá, no init) e a que a escala pede.
+  const resolutionFor = (scale: number) =>
+    renderResolution(scale, environment.devicePixelRatio());
+  let wanted = resolutionFor(stageScale.get()) ?? 1;
+  let applied = wanted;
+  let resize = (_resolution: number) => {};
+  const unsubscribeScale = stageScale.subscribe((scale) => {
+    const resolution = resolutionFor(scale);
+    if (resolution === null) return;
+    wanted = resolution;
+    resize(resolution);
+  });
+
   environment
     .loadScene()
     .then(({ createRenderer, buildScene }) => {
       if (disposed) return;
       return createRenderer(
-        rendererOptions(environment.devicePixelRatio()),
+        rendererOptions(applied, environment.devicePixelRatio()),
       ).then((renderer) => {
         if (disposed) {
           renderer.destroy({ removeView: true });
           return;
         }
+        resize = (resolution) => {
+          if (resolution === applied) return;
+          applied = resolution;
+          renderer.resize(STAGE_WIDTH, STAGE_HEIGHT, resolution);
+        };
+        resize(wanted);
         teardown = start(renderer, buildScene);
       });
     })
@@ -173,6 +206,7 @@ export function mountScene(
   return () => {
     disposed = true;
     unsubscribeStore();
+    unsubscribeScale();
     motion.removeEventListener('change', onMotion);
     teardown();
   };

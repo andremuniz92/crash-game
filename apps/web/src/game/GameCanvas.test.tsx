@@ -19,6 +19,7 @@ import type {
   SceneRenderer,
 } from './mount-scene.js';
 import { MultiplierText } from './MultiplierText.js';
+import { createStageScale, StageScaleContext } from './stage-scale.js';
 import { buildScene, type PixiScene } from './pixi/pixi-scene.js';
 
 afterEach(() => {
@@ -80,6 +81,7 @@ function fakeRenderer() {
   const renderer = {
     canvas,
     render: vi.fn(),
+    resize: vi.fn(),
     destroy: vi.fn((options?: { removeView?: boolean }) => {
       if (options?.removeView) canvas.remove();
     }),
@@ -129,6 +131,8 @@ async function setup({
   withText = false,
   clock,
   loader = 'ready',
+  scale = 0.5,
+  dpr = 3,
 }: {
   round?: RoundDto | null;
   serverNow?: number;
@@ -137,6 +141,9 @@ async function setup({
   withText?: boolean;
   clock?: { serverNow: () => number };
   loader?: 'ready' | 'pending';
+  /** Escala do palco publicada antes da montagem. */
+  scale?: number;
+  dpr?: number;
 } = {}) {
   const frames = fakeFrames();
   fakeResizeObserver();
@@ -160,8 +167,12 @@ async function setup({
   const environment: SceneEnvironment = {
     loadScene,
     matchMedia: () => media.query,
-    devicePixelRatio: () => 3,
+    devicePixelRatio: () => pixelRatio,
   };
+  let pixelRatio = dpr;
+  const stageScale = createStageScale();
+  stageScale.set(scale);
+  const scales = trackSubscriptions(stageScale);
 
   const drawn: Drawn[] = [];
   const scenes: PixiScene[] = [];
@@ -184,8 +195,10 @@ async function setup({
 
   const result = renderWithGame(
     <GameStage>
-      <GameCanvas />
-      {withText && <MultiplierText />}
+      <StageScaleContext.Provider value={scales.loop}>
+        <GameCanvas />
+        {withText && <MultiplierText />}
+      </StageScaleContext.Provider>
     </GameStage>,
     {
       store: store.loop as GameStore,
@@ -226,6 +239,12 @@ async function setup({
     setNow: (value: number) => {
       now = value;
     },
+    setDpr: (value: number) => {
+      pixelRatio = value;
+    },
+    /** Publica uma escala nova do palco, como o GameStage no resize. */
+    publish: (value: number) => act(() => stageScale.set(value)),
+    scaleLive: scales.live,
     canvases: () => document.querySelectorAll('[data-stage] canvas'),
   };
 }
@@ -245,9 +264,9 @@ describe('GameCanvas (D89, D91, D92)', () => {
       width: 1280,
       height: 720,
       backgroundAlpha: 0,
-      resolution: 3,
-      autoDensity: true,
-      antialias: true,
+      resolution: 1,
+      autoDensity: false,
+      antialias: false,
     });
   });
 
@@ -307,6 +326,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
     expect(t.store.live()).toBe(1);
     expect(t.loop.live()).toBe(1);
     expect(t.media.listeners.size).toBe(1);
+    expect(t.scaleLive()).toBe(1);
     expect(listeners.added).toBeGreaterThan(0);
     const scene = t.scenes.at(-1);
     if (!scene) throw new Error('cena não montada');
@@ -322,6 +342,7 @@ describe('GameCanvas (D89, D91, D92)', () => {
     expect(t.loop.live()).toBe(0);
     expect(t.frames.active()).toBe(0);
     expect(t.media.listeners.size).toBe(0);
+    expect(t.scaleLive()).toBe(0);
     expect(listeners.removed).toBe(listeners.added);
     expect(renderer.canvas.isConnected).toBe(false);
     expect(renderer.destroy.mock.calls).toEqual([[{ removeView: true }]]);
@@ -532,5 +553,66 @@ describe('GameCanvas com a cena por import dinâmico (D94)', () => {
     expect(t.createRenderer).not.toHaveBeenCalled();
     expect(t.canvases()).toHaveLength(0);
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe('GameCanvas com a resolução pela escala do palco (D93)', () => {
+  it('GC13: uma escala nova redimensiona o renderer, sem recriá-lo; a mesma resolução não redimensiona', async () => {
+    const t = await setup();
+    const { renderer } = await t.resolveInit();
+
+    t.publish(0.25);
+    expect(renderer.resize.mock.calls).toEqual([[1280, 720, 0.5]]);
+    t.publish(0.1); // 0,2 → piso 0,25
+    t.publish(0.12); // 0,24 → piso 0,25: a mesma resolução
+    expect(renderer.resize.mock.calls).toEqual([
+      [1280, 720, 0.5],
+      [1280, 720, 0.25],
+    ]);
+
+    expect(t.createRenderer).toHaveBeenCalledTimes(1);
+    expect(t.canvases()).toHaveLength(1);
+    expect(t.canvases()[0]).toBe(renderer.canvas);
+  });
+
+  it('GC14: escalas publicadas antes do init viram um resize só, com a última', async () => {
+    const t = await setup();
+    t.publish(0.25);
+    t.publish(0.75);
+    const { renderer } = await t.resolveInit();
+    expect(renderer.resize.mock.calls).toEqual([[1280, 720, 1.5]]);
+
+    // A última volta à resolução do init: nada a aplicar.
+    const u = await setup();
+    u.publish(0.25);
+    u.publish(0.5);
+    const other = await u.resolveInit();
+    expect(other.renderer.resize).not.toHaveBeenCalled();
+  });
+
+  it('GC15: escala 0 (palco oculto) não redimensiona; o init sem escala usa resolução 1', async () => {
+    const t = await setup({ scale: 0 });
+    expect(t.createRenderer.mock.calls[0]?.[0].resolution).toBe(1);
+    const { renderer } = await t.resolveInit();
+
+    t.publish(0);
+    expect(renderer.resize).not.toHaveBeenCalled();
+    t.publish(0.25);
+    expect(renderer.resize.mock.calls).toEqual([[1280, 720, 0.5]]);
+  });
+
+  it('GC16: o resize usa o DPR do momento (zoom); o antialias fica o do init', async () => {
+    const t = await setup({ scale: 0.5, dpr: 1 });
+    expect(t.createRenderer.mock.calls[0]?.[0]).toMatchObject({
+      resolution: 0.5,
+      antialias: true,
+    });
+    const { renderer } = await t.resolveInit();
+
+    t.setDpr(2);
+    t.publish(0.5);
+
+    expect(renderer.resize.mock.calls).toEqual([[1280, 720, 1]]);
+    expect(t.createRenderer).toHaveBeenCalledTimes(1);
   });
 });

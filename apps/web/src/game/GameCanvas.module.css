@@ -5,6 +5,9 @@
   pointer-events: none;
 }
 
+/* O backing segue a resolução (D93); o tamanho CSS é sempre o do palco. */
 .host canvas {
   display: block;
+  width: 100%;
+  height: 100%;
 }

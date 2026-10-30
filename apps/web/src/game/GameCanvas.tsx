@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useGame } from '../app/game-context.js';
 import styles from './GameCanvas.module.css';
 import { mountScene } from './mount-scene.js';
+import { useStageScale } from './stage-scale.js';
 
 /**
  * Camada da cena no palco (D10): o Pixi é montado imperativamente no efeito e
@@ -11,6 +12,7 @@ import { mountScene } from './mount-scene.js';
  */
 export function GameCanvas() {
   const { store, frames, scene, marks } = useGame();
+  const stageScale = useStageScale();
   const host = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -20,9 +22,10 @@ export function GameCanvas() {
       store,
       frames,
       environment: scene,
+      stageScale,
       marks,
     });
-  }, [store, frames, scene, marks]);
+  }, [store, frames, scene, stageScale, marks]);
 
   return <div ref={host} className={styles.host} data-scene-host />;
 }
