@@ -1,0 +1,17 @@
+# Contexto do build da api (D103). Os padrões com **/ valem em qualquer pasta;
+# sem eles, só na raiz (o deploy-config.spec.ts confere).
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/*.log
+.pnpm-store
+.git
+.github
+.ai-jail
+.claude
+tmp-patches
+docs
+.env
+.env.*
+apps/web
