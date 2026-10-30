@@ -49,6 +49,37 @@ const storeWith = (round: RoundDto | null) => {
   return store;
 };
 const panel = () => document.querySelector<HTMLElement>('[data-fps-meter]');
+const windowLine = () =>
+  document.querySelector<HTMLElement>('[data-fps-meter] [data-fps-window]');
+const roundLine = () =>
+  document.querySelector<HTMLElement>('[data-fps-meter] [data-fps-round]');
+
+/** Os alvos de escrita que estão dentro do painel (ele incluído). */
+const inside = (element: HTMLElement | null, contexts: unknown[]) =>
+  contexts.filter(
+    (context) =>
+      context instanceof Node && element !== null && element.contains(context),
+  );
+
+const roundId = (n: number) =>
+  `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+
+/** Mensagens de uma rodada, no formato do WS. */
+const open = (id: string, at: number) => ({
+  type: 'round:betting' as const,
+  payload: { roundId: id, seedHash: 'h'.repeat(64), bettingEndsAt: at + 1_000 },
+  serverTime: at,
+});
+const start = (id: string, at: number) => ({
+  type: 'round:started' as const,
+  payload: { roundId: id, startedAt: at },
+  serverTime: at,
+});
+const crash = (id: string, at: number) => ({
+  type: 'round:crashed' as const,
+  payload: { roundId: id, crashPoint: 150, serverSeed: 's'.repeat(64) },
+  serverTime: at,
+});
 
 describe('medidor de fps (D97)', () => {
   it('FM1: o painel escreve no máximo uma vez por segundo', () => {
@@ -60,7 +91,8 @@ describe('medidor de fps (D97)', () => {
 
     for (let i = 0; i < 300; i++) emit((i * 1_000) / 60);
 
-    const writes = text.mock.contexts.filter((context) => context === element);
+    // O painel e os filhos (linha da janela e linha da rodada).
+    const writes = inside(element, text.mock.contexts);
     expect(writes).toHaveLength(4);
   });
 
@@ -163,5 +195,142 @@ describe('medidor de fps (D97)', () => {
         '[fps] rodada 30,0 s: média 43,3 · lentos 50 · 1% low (últimos 10 s) 50',
       ],
     ]);
+  });
+
+  it('FM7: no crash, o painel mostra a mesma linha passada ao console', () => {
+    const log = vi.fn();
+    const store = storeWith(betting);
+    const { timings, emit } = fakeTimings();
+    startFpsMeter({ frames: timings, store, document, log });
+    expect(roundLine()?.textContent).toBe('');
+
+    store.receive(start(ID, 1_000));
+    let time = 1_000;
+    for (let i = 0; i < 120; i++) emit((time += 20));
+    store.receive(crash(ID, time));
+
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(roundLine()?.textContent).toBe(log.mock.calls[0]?.[0]);
+    expect(windowLine()?.textContent).toMatch(/^[\d,]+ fps · 1% low /);
+  });
+
+  it('FM8: a linha fica durante a rodada seguinte e é trocada no crash dela', () => {
+    const log = vi.fn();
+    const store = storeWith(betting);
+    const { timings, emit } = fakeTimings();
+    startFpsMeter({ frames: timings, store, document, log });
+
+    let time = 1_000;
+    store.receive(start(ID, time));
+    for (let i = 0; i < 100; i++) emit((time += 20));
+    store.receive(crash(ID, time));
+    const first = log.mock.calls[0]?.[0];
+
+    const next = roundId(2);
+    store.receive(open(next, (time += 1_000)));
+    for (let i = 0; i < 100; i++) emit((time += 20));
+    expect(roundLine()?.textContent).toBe(first);
+    store.receive(start(next, (time += 1_000)));
+    for (let i = 0; i < 300; i++) emit((time += 10));
+    expect(roundLine()?.textContent).toBe(first);
+
+    store.receive(crash(next, time));
+
+    expect(log).toHaveBeenCalledTimes(2);
+    const second = log.mock.calls[1]?.[0];
+    expect(second).not.toBe(first);
+    expect(roundLine()?.textContent).toBe(second);
+    expect(
+      document.querySelectorAll('[data-fps-meter] [data-fps-round]'),
+    ).toHaveLength(1);
+  });
+
+  it('FM9: uma escrita por segundo na janela e uma por rodada na linha', () => {
+    const store = storeWith(betting);
+    const { timings, emit } = fakeTimings();
+    startFpsMeter({ frames: timings, store, document, log: () => {} });
+    const text = vi.spyOn(Node.prototype, 'textContent', 'set');
+
+    let time = 0;
+    const frames = (count: number) => {
+      for (let i = 0; i < count; i++) emit((time += 1_000 / 60));
+    };
+    for (let n = 1; n <= 3; n++) {
+      const id = n === 1 ? ID : roundId(n);
+      if (n > 1) store.receive(open(id, time));
+      store.receive({
+        type: 'bet:placed',
+        payload: {
+          roundId: id,
+          betId: roundId(100 + n),
+          nickname: 'ana',
+          amount: 100,
+        },
+        serverTime: time,
+      });
+      frames(60);
+      store.receive(start(id, time));
+      frames(120);
+      store.receive(crash(id, time));
+      frames(30);
+    }
+
+    const writes = inside(panel(), text.mock.contexts);
+    const round = roundLine();
+    const roundWrites = writes.filter((context) => context === round);
+    expect(roundWrites).toHaveLength(3);
+    expect(writes.length - roundWrites.length).toBeLessThanOrEqual(
+      Math.ceil(time / 1_000),
+    );
+  });
+
+  it('FM10: crash que chega por snapshot não escreve linha nem loga', () => {
+    const log = vi.fn();
+    const store = storeWith(betting);
+    const { timings, emit } = fakeTimings();
+    startFpsMeter({ frames: timings, store, document, log });
+    const text = vi.spyOn(Node.prototype, 'textContent', 'set');
+
+    // Reconexão: outra rodada, já crashada, sem RUNNING visto pelo medidor.
+    store.load({
+      round: {
+        status: 'CRASHED',
+        id: roundId(2),
+        seedHash: 'h'.repeat(64),
+        bettingEndsAt: 1_000,
+        startedAt: 1_000,
+        crashedAt: 5_000,
+        crashPoint: 130,
+        serverSeed: 's'.repeat(64),
+      },
+      bets: [],
+      myBet: null,
+      serverTime: 6_000,
+    });
+    expect(log).not.toHaveBeenCalled();
+    expect(roundLine()?.textContent).toBe('');
+
+    // Uma rodada medida, e o mesmo crash repetido por um snapshot.
+    const id = roundId(3);
+    let time = 7_000;
+    store.receive(open(id, time));
+    store.receive(start(id, (time += 1_000)));
+    for (let i = 0; i < 60; i++) emit((time += 20));
+    store.receive(crash(id, time));
+    const line = roundLine()?.textContent;
+    const crashed = store.getState().round;
+    store.load({
+      round: crashed ? { ...crashed } : null,
+      bets: [],
+      myBet: null,
+      serverTime: time + 1_000,
+    });
+
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(roundLine()?.textContent).toBe(line);
+    const round = roundLine();
+    expect(
+      text.mock.contexts.filter((context) => context === round),
+    ).toHaveLength(1);
   });
 });

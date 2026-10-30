@@ -17,7 +17,8 @@ function panelText(snapshot: FpsSnapshot): string {
  * Medidor de fps ligado por ?fps (D97). Fora do React: o painel é um div no
  * body, escrito no máximo uma vez por segundo, nunca por frame. No fim de
  * cada rodada, uma linha no console com a média e os lentos da rodada
- * inteira, e o 1% low da janela de 10 s.
+ * inteira, e o 1% low da janela de 10 s; a mesma linha fica no painel até o
+ * fim da rodada seguinte, para ler no aparelho sem console remoto.
  */
 export function startFpsMeter({
   frames,
@@ -46,6 +47,11 @@ export function startFpsMeter({
     font: '12px ui-monospace, Menlo, Consolas, monospace',
     pointerEvents: 'none',
   });
+  const windowLine = document.createElement('div');
+  windowLine.dataset.fpsWindow = '';
+  const roundLine = document.createElement('div');
+  roundLine.dataset.fpsRound = '';
+  panel.append(windowLine, roundLine);
   document.body.append(panel);
 
   // Contadores da rodada em andamento, zerados a cada nova RUNNING.
@@ -77,9 +83,9 @@ export function startFpsMeter({
       const seconds = (round.crashedAt - round.startedAt) / 1_000;
       const average = roundTime > 0 ? (1_000 * roundFrames) / roundTime : 0;
       const low = Math.round(stats.snapshot().onePercentLowFps);
-      log(
-        `[fps] rodada ${decimal(seconds)} s: média ${decimal(average)} · lentos ${roundSlow} · 1% low (últimos 10 s) ${low}`,
-      );
+      const line = `[fps] rodada ${decimal(seconds)} s: média ${decimal(average)} · lentos ${roundSlow} · 1% low (últimos 10 s) ${low}`;
+      log(line);
+      roundLine.textContent = line;
     }
   });
 
@@ -96,7 +102,7 @@ export function startFpsMeter({
     }
     if (frameTime < nextWrite) return;
     while (nextWrite <= frameTime) nextWrite += 1_000;
-    panel.textContent = panelText(stats.snapshot());
+    windowLine.textContent = panelText(stats.snapshot());
   });
 
   return () => {
