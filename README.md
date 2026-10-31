@@ -2,13 +2,25 @@
 
 [![CI](https://github.com/andremuniz92/crash-game/actions/workflows/ci.yml/badge.svg)](https://github.com/andremuniz92/crash-game/actions/workflows/ci.yml)
 
-**Status:** M0 a M4 prontos (back-end e base do front); cena PixiJS em desenvolvimento.
+**Status:** M0 a M5 prontos: back-end, front em React e cena PixiJS medida em celular real. Deploy
+em andamento (M7a).
 
 Crash game multiplayer com rodada global, usando créditos fictícios. Projeto de portfólio.
 As decisões de arquitetura estão no [CLAUDE.md](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
 
 ## Destaques
 
+- **Cena PixiJS imperativa.** A lógica da cena é pura e testada sem WebGL; um frame loop único,
+  sincronizado ao relógio do servidor, move o texto e a pipa; nenhum objeto Pixi é criado por frame,
+  e o React não re-renderiza a cada frame.
+  [D10, D88, D89](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
+- **Desempenho medido, antes e depois.** JS inicial de 215 para 83 kB gzip com import dinâmico;
+  jogável em 1,8 s em vez de 2,6 s (Lighthouse, Slow 4G + CPU 4×); 11 a 25× menos pixels por frame
+  nos tamanhos de celular (modo responsivo, DPR 2 e 3); 60 fps num iPhone 11, antes e depois.
+  [Desempenho](#desempenho-seção-113), [D94, D101](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
+- **Resiliência.** Sem WebGL, a cena cai para Canvas 2D; sem renderer ou sem o chunk da cena, o jogo
+  continua jogável pelo texto. O WebSocket reconecta e ressincroniza sozinho.
+  [D76, D92](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
 - **Sem corrida entre cash out e crash.** Ordem fixa de locks (rodada → aposta → carteira): o
   crash espera os cash outs em andamento e nunca grava "perdeu" por cima de um saque aceito.
   [D57](./CLAUDE.md#4-decisões-registradas-adrs-resumidos), [fluxos críticos](./CLAUDE.md#10-fluxos-críticos-e-concorrência).
@@ -23,7 +35,7 @@ As decisões de arquitetura estão no [CLAUDE.md](./CLAUDE.md#4-decisões-regist
   [D54](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
 - **Testes que provam que pegam a falha.** Em cada fase, o código que protege uma regra foi removido
   de propósito para confirmar que o teste falha (mutação manual). [Testes](./CLAUDE.md#12-testes).
-- **773 testes:** 639 unitários e de componente, 85 de integração com Postgres real e 49 E2E por
+- **897 testes:** 759 unitários e de componente, 88 de integração com Postgres real e 50 E2E por
   HTTP e WebSocket, todos no CI. [D39, D40, D66, D82](./CLAUDE.md#4-decisões-registradas-adrs-resumidos).
 
 ## Como foi desenvolvido
